@@ -47,6 +47,23 @@ fn parses_queue_options() {
 }
 
 #[test]
+fn parses_facts_command() {
+    let command = parse_args(vec![
+        "facts".to_string(),
+        "--repo=nexu-io/open-design".to_string(),
+        "--limit".to_string(),
+        "7".to_string(),
+    ])
+    .expect("parse args");
+
+    let CliCommand::Facts(options) = command else {
+        panic!("expected facts command");
+    };
+    assert_eq!(options.repo.as_deref(), Some("nexu-io/open-design"));
+    assert_eq!(options.limit, 7);
+}
+
+#[test]
 fn rejects_zero_limit() {
     let error = parse_args(vec!["queue".to_string(), "--limit=0".to_string()])
         .expect_err("zero limit should fail");

@@ -53,6 +53,7 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo run --locked -p duty-cli -- queue --limit 5
 cargo run --locked -p duty-cli -- queue --limit 5 --format json
+cargo run --locked -p duty-cli -- facts --limit 5
 ```
 
 `python3 scripts/init.py` is the default post-clone command. Use `--force` only
@@ -169,4 +170,3 @@ Future side-effecting commands should be explicit and documented as such.
 
 Start with config or a dedicated adapter module. Do not put Open Design-specific
 policy directly into generic GitHub fetch or cache primitives.
-

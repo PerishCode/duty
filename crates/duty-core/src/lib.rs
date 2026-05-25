@@ -2,6 +2,7 @@ pub mod model;
 pub mod plain;
 
 pub use model::{
-    CacheConfig, DutyConfig, GithubConfig, OpenPullRequest, QueueSnapshot, SnapshotSource,
+    AssignmentEvent, CacheConfig, Comment, Commit, DutyConfig, FactSnapshot, FileChange,
+    GithubConfig, OpenPullRequest, PrFiles, PrMeta, PrStats, QueueSnapshot, Review, SnapshotSource,
 };
 pub use plain::parse_plain_pr_list;

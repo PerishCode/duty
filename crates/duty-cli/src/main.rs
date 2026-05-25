@@ -9,8 +9,8 @@ mod output;
 use cli::{help_text, parse_args, CliCommand, LogLevel};
 use config::load_config;
 use duty_core::SnapshotSource;
-use github::fetch_open_prs;
-use output::print_queue;
+use github::{fetch_fact_snapshot, fetch_open_prs};
+use output::{print_facts, print_queue};
 use tracing::debug;
 use tracing_subscriber::filter::LevelFilter;
 
@@ -30,20 +30,7 @@ fn run() -> Result<i32, String> {
 
     match command {
         CliCommand::Queue(options) => {
-            let config = load_config(options.config.as_deref())?;
-            let repo = options
-                .repo
-                .clone()
-                .or(config.github.default_repo)
-                .ok_or_else(|| {
-                    "missing repo; pass --repo owner/name or set github.defaultRepo in duty.json"
-                        .to_string()
-                })?;
-
-            let cache_dir = options
-                .cache_dir
-                .clone()
-                .unwrap_or_else(|| std::path::PathBuf::from(".tmp/duty/cache"));
+            let (repo, cache_dir) = resolve_repo_and_cache(&options)?;
             let cache_path = cache::snapshot_path(&cache_dir, &repo);
             let snapshot = if options.offline {
                 let mut cached = cache::read_snapshot(&cache_path)?;
@@ -73,6 +60,36 @@ fn run() -> Result<i32, String> {
             print_queue(&snapshot, options.format)?;
             Ok(0)
         }
+        CliCommand::Facts(options) => {
+            let (repo, cache_dir) = resolve_repo_and_cache(&options)?;
+            let cache_path = cache::facts_path(&cache_dir, &repo);
+            let snapshot = if options.offline {
+                let mut cached = cache::read_facts(&cache_path)?;
+                cached.source = SnapshotSource::Cache;
+                cached
+            } else {
+                match fetch_fact_snapshot(&repo, options.limit) {
+                    Ok(snapshot) => {
+                        cache::write_facts(&cache_path, &snapshot)?;
+                        snapshot
+                    }
+                    Err(error) => {
+                        debug!(error = %error, "live GitHub facts fetch failed; trying cache");
+                        let mut cached = cache::read_facts(&cache_path).map_err(|cache_error| {
+                            format!(
+                                "{error}; no usable cache at {} ({cache_error})",
+                                cache_path.display()
+                            )
+                        })?;
+                        cached.source = SnapshotSource::Cache;
+                        cached
+                    }
+                }
+            };
+
+            print_facts(&snapshot, options.format)?;
+            Ok(0)
+        }
         CliCommand::Help => {
             println!("{}", help_text());
             Ok(0)
@@ -82,6 +99,25 @@ fn run() -> Result<i32, String> {
             Ok(0)
         }
     }
+}
+
+fn resolve_repo_and_cache(
+    options: &cli::QueueOptions,
+) -> Result<(String, std::path::PathBuf), String> {
+    let config = load_config(options.config.as_deref())?;
+    let repo = options
+        .repo
+        .clone()
+        .or(config.github.default_repo)
+        .ok_or_else(|| {
+            "missing repo; pass --repo owner/name or set github.defaultRepo in duty.json"
+                .to_string()
+        })?;
+    let cache_dir = options
+        .cache_dir
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from(".tmp/duty/cache"));
+    Ok((repo, cache_dir))
 }
 
 fn build_version() -> &'static str {

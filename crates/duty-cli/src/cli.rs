@@ -30,6 +30,7 @@ pub(crate) struct QueueOptions {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum CliCommand {
     Queue(QueueOptions),
+    Facts(QueueOptions),
     Help,
     Version,
 }
@@ -37,10 +38,16 @@ pub(crate) enum CliCommand {
 impl CliCommand {
     pub(crate) fn log_level(&self) -> LogLevel {
         match self {
-            CliCommand::Queue(options) => options.log_level,
+            CliCommand::Queue(options) | CliCommand::Facts(options) => options.log_level,
             CliCommand::Help | CliCommand::Version => LogLevel::Off,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum CommandMode {
+    Queue,
+    Facts,
 }
 
 pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
@@ -52,12 +59,18 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     let mut offline = false;
     let mut log_level = LogLevel::Off;
     let mut command_seen = false;
+    let mut mode = CommandMode::Queue;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "queue" if !command_seen => {
                 command_seen = true;
+                mode = CommandMode::Queue;
+            }
+            "facts" if !command_seen => {
+                command_seen = true;
+                mode = CommandMode::Facts;
             }
             "help" | "--help" | "-h" => return Ok(CliCommand::Help),
             "version" | "--version" | "-V" => return Ok(CliCommand::Version),
@@ -109,7 +122,7 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         }
     }
 
-    Ok(CliCommand::Queue(QueueOptions {
+    let options = QueueOptions {
         repo,
         config,
         cache_dir,
@@ -117,7 +130,12 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         format,
         offline,
         log_level,
-    }))
+    };
+
+    Ok(match mode {
+        CommandMode::Queue => CliCommand::Queue(options),
+        CommandMode::Facts => CliCommand::Facts(options),
+    })
 }
 
 fn next_value(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -165,6 +183,9 @@ Commands:
   queue [--repo owner/name] [--limit <n>] [--format text|json]
         [--config <path>] [--cache-dir <path>] [--offline]
         [--log-level off|error|warn|info|debug|trace]
+  facts [--repo owner/name] [--limit <n>] [--format text|json]
+        [--config <path>] [--cache-dir <path>] [--offline]
+        [--log-level off|error|warn|info|debug|trace]
   help
   version
 
@@ -177,6 +198,12 @@ Queue behavior:
   queue first asks gh for a JSON PR list, then falls back to the plain
   tabular gh output when GitHub's API path flakes. Successful live snapshots
   are cached under .tmp/duty/cache by default. --offline reads only cache.
+
+Fact behavior:
+  facts fetches the chunked PR metadata, stats, files, reviews, comments,
+  commits, and assignment event streams needed by list/classify/view/assignment
+  parity work. Chunk failures are reported as warnings when a partial snapshot
+  can still be produced.
 
 Project:
   Source: https://github.com/PerishCode/duty

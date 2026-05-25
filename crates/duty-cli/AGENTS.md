@@ -25,6 +25,6 @@ to the default suite.
 ```bash
 cargo run --locked -p duty-cli -- help
 cargo run --locked -p duty-cli -- queue --limit 5
+cargo run --locked -p duty-cli -- facts --limit 5
 cargo test --locked -p duty-cli
 ```
-

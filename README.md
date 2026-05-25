@@ -31,6 +31,8 @@ duty queue
 duty queue --repo nexu-io/open-design --limit 10
 duty queue --format json
 duty queue --offline
+duty facts --limit 10
+duty facts --format json
 duty help
 ```
 
@@ -41,6 +43,11 @@ Successful live queue reads are cached under `.tmp/duty/cache/<owner>__<repo>/`.
 When live GitHub reads fail, `duty queue` falls back to the latest usable cache.
 `--offline` skips GitHub and reads cache only.
 
+`duty facts` is the parity-work intake surface. It fetches the PR metadata,
+stats, files, reviews, commits, comments, and assignment event streams that
+later `list`, `classify`, `view`, and `assignment` commands will consume. Chunk
+failures are reported as warnings when a partial snapshot can still be built.
+
 ## Development
 
 ```bash
@@ -49,6 +56,7 @@ cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo run --locked -p duty-cli -- help
+cargo run --locked -p duty-cli -- facts --limit 2
 ```
 
 ## Scope
@@ -57,4 +65,3 @@ cargo run --locked -p duty-cli -- help
 keep product-specific policy out of upstream product repositories.
 
 For source-change shape, see [AGENTS.md](./AGENTS.md).
-
