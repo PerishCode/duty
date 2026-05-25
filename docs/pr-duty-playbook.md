@@ -27,6 +27,7 @@ legitimate use.
 | `awaiting-author-response-24h` | Latest human-reviewer signal is newer than the latest author signal and is ≥ 24h ago | latestReviews + comments + commits |
 | `awaiting-reviewer-response-24h` | Latest author signal is newer than the latest human-reviewer signal, ≥ 24h ago, and at least one human-reviewer signal exists | latestReviews + comments + commits |
 | `awaiting-first-review-24h` | No human review or non-author non-bot comment exists, and `createdAt` is ≥ 24h ago | latestReviews + comments + createdAt |
+| `author-cluster` | A single author has ≥ 7 open PRs in the current snapshot. Threshold is fixed in code (`AUTHOR_CLUSTER_THRESHOLD`). Each PR in the cluster gets `tag.clusterSize` set to the snapshot-wide open-PR count for that author | cross-PR open-PR-count index by author |
 
 **Signal-time definitions** used by the three `awaiting-*` tags:
 
@@ -164,6 +165,38 @@ either pick up the review themselves or re-ping a reviewer offline.
 
 No reviewer engagement yet. Same offline routing: claim the review locally or
 solicit one through the team's normal review-assignment channel.
+
+### `author-cluster`
+
+`author-cluster` is a structural signal, not a per-PR action item. When a
+single author shows up with 7+ open PRs, the playbook's other rows are
+suppressed for that cohort: a 7+ nudge or 7+ close-supersede sequence
+broadcasts in a way that violates the conduct rules, regardless of how
+correct each individual action would be in isolation.
+
+1. List the cluster from the latest classify report:
+
+   ```bash
+   jq -r '.byAuthor | to_entries[] | select(.value | length >= 7)
+          | "\(.key) (\(.value | length)): \(.value | join(", #") | "#" + .)"' \
+     .tmp/duty/classify/<latest>.json
+   ```
+
+2. Cross-reference each PR's other tags (`needs-rebase`,
+   `unresolved-changes-requested`, `awaiting-*`, `bot-only-approval`, etc.) to
+   understand the cluster's shape: is it stalled, drifting, mostly mergeable,
+   mostly contested?
+
+3. Write a single consolidated brief to
+   `.tmp/duty/reviews/author-cluster-<login>.md`. The brief is a transient
+   runtime artifact for the maintainer; it is never posted to GitHub. Beats:
+   per-PR one-line state, recurring patterns, the maintainer-level question
+   ("triage these as a batch?", "ask the author to consolidate?",
+   "fast-forward the mergeable subset?").
+
+4. If `org-member` also fires for the same author, route the brief through
+   the team's internal IM. Otherwise hand the brief to the maintainer and
+   let them choose the next step. Do not act per-PR off this tag.
 
 ### `org-member` plus operational tags
 

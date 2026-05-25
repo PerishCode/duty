@@ -6,7 +6,10 @@ use duty_core::{
 };
 
 use crate::{
-    classify::{run_classify, tags_for_number_with_org_members, ClassifyRunContext, RateReport},
+    classify::{
+        build_report_from_snapshot, run_classify, tags_for_number_with_org_members,
+        ClassifyRunContext, RateReport,
+    },
     cli::{ClassifyOptions, LogLevel, OutputFormat, QueueOptions},
 };
 
@@ -78,6 +81,131 @@ fn runs_single_and_all_classify_output_paths() {
         ..ClassifyRunContext::default()
     };
     run_classify(&snapshot, &all, &context).expect("all classify");
+}
+
+#[test]
+fn flags_author_cluster_when_open_pr_count_meets_threshold() {
+    let snapshot = author_cluster_snapshot(7);
+    let report = build_report_from_snapshot(&snapshot, &HashSet::new());
+
+    let cluster_numbers = report
+        .by_tag
+        .get("author-cluster")
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(cluster_numbers, (1..=7).collect::<Vec<_>>());
+
+    for number in 1..=7 {
+        let tags = report
+            .by_number
+            .get(&number.to_string())
+            .expect("tags for PR");
+        let cluster = tags
+            .iter()
+            .find(|tag| tag.name == "author-cluster")
+            .expect("author-cluster tag");
+        assert_eq!(cluster.cluster_size, Some(7));
+    }
+
+    assert_eq!(
+        report
+            .by_author
+            .get("prolific")
+            .cloned()
+            .unwrap_or_default(),
+        (1..=7).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn does_not_flag_author_cluster_below_threshold() {
+    let snapshot = author_cluster_snapshot(6);
+    let report = build_report_from_snapshot(&snapshot, &HashSet::new());
+
+    assert!(
+        !report.by_tag.contains_key("author-cluster"),
+        "author-cluster should not appear when an author has 6 PRs"
+    );
+    for number in 1..=6 {
+        let tags = report
+            .by_number
+            .get(&number.to_string())
+            .expect("tags for PR");
+        assert!(tags.iter().all(|tag| tag.name != "author-cluster"));
+    }
+}
+
+#[test]
+fn cluster_size_is_serialized_only_when_present() {
+    let snapshot = author_cluster_snapshot(7);
+    let report = build_report_from_snapshot(&snapshot, &HashSet::new());
+    let json = serde_json::to_string(&report).expect("serialize report");
+
+    assert!(json.contains("\"clusterSize\":7"));
+    assert!(json.contains("\"byAuthor\":{"));
+    assert!(
+        !json.contains("\"clusterSize\":null"),
+        "skip_serializing_if should hide null clusterSize"
+    );
+}
+
+fn author_cluster_snapshot(pr_count: u64) -> FactSnapshot {
+    let meta = (1..=pr_count)
+        .map(|number| PrMeta {
+            number,
+            title: format!("cluster pr {number}"),
+            author: Some("prolific".to_string()),
+            created_at: Some("2026-05-25T00:00:00Z".to_string()),
+            updated_at: Some("2026-05-25T00:00:00Z".to_string()),
+            is_draft: Some(false),
+            review_decision: Some(String::new()),
+            labels: vec![
+                "size/S".to_string(),
+                "risk/low".to_string(),
+                "type/feature".to_string(),
+            ],
+            maintainer_can_modify: Some(true),
+            assignees: Vec::new(),
+            head_ref_name: Some(format!("feat/cluster-{number}")),
+        })
+        .collect::<Vec<_>>();
+    let stats = (1..=pr_count)
+        .map(|number| PrStats {
+            number,
+            additions: Some(1),
+            deletions: Some(0),
+            changed_files: Some(1),
+            head_ref_name: Some(format!("feat/cluster-{number}")),
+            head_ref_oid: Some(format!("head-{number}")),
+            base_ref_name: Some("main".to_string()),
+            mergeable: Some("MERGEABLE".to_string()),
+            merge_state_status: Some("CLEAN".to_string()),
+        })
+        .collect::<Vec<_>>();
+    let files = (1..=pr_count)
+        .map(|number| PrFiles {
+            number,
+            files: vec![FileChange {
+                path: format!("docs/cluster-{number}.md"),
+                additions: Some(1),
+                deletions: Some(0),
+                change_type: Some("ADDED".to_string()),
+            }],
+        })
+        .collect::<Vec<_>>();
+    FactSnapshot {
+        repo: "nexu-io/open-design".to_string(),
+        fetched_at: "1".to_string(),
+        source: SnapshotSource::GhFacts,
+        warnings: Vec::new(),
+        meta,
+        stats,
+        files,
+        reviews: Vec::new(),
+        commits: Vec::new(),
+        comments: Vec::new(),
+        assignment_events: Vec::new(),
+    }
 }
 
 fn options(format: OutputFormat) -> QueueOptions {

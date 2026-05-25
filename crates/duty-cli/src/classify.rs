@@ -15,6 +15,7 @@ use crate::{
 };
 
 const AWAITING_THRESHOLD_HOURS: u64 = 24;
+const AUTHOR_CLUSTER_THRESHOLD: u32 = 7;
 const KNOWN_TAGS: &[&str] = &[
     "bot-only-approval",
     "needs-rebase",
@@ -29,6 +30,7 @@ const KNOWN_TAGS: &[&str] = &[
     "awaiting-author-response-24h",
     "awaiting-reviewer-response-24h",
     "awaiting-first-review-24h",
+    "author-cluster",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +41,8 @@ pub(crate) struct Tag {
     pub(crate) source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) awaiting_hours: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cluster_size: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,16 +65,17 @@ struct PrFacts {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ClassifyReport {
-    generated_at: String,
-    open_pr_total: usize,
-    classified_count: usize,
-    by_tag: BTreeMap<String, Vec<u64>>,
-    by_number: BTreeMap<String, Vec<Tag>>,
+pub(crate) struct ClassifyReport {
+    pub(crate) generated_at: String,
+    pub(crate) open_pr_total: usize,
+    pub(crate) classified_count: usize,
+    pub(crate) by_tag: BTreeMap<String, Vec<u64>>,
+    pub(crate) by_author: BTreeMap<String, Vec<u64>>,
+    pub(crate) by_number: BTreeMap<String, Vec<Tag>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    rate: Option<RateReport>,
+    pub(crate) rate: Option<RateReport>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    warnings: Vec<String>,
+    pub(crate) warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +96,7 @@ pub(crate) struct ClassifyRunContext {
 #[derive(Debug)]
 struct ClassifyContext {
     title_index_by_author: HashMap<String, Vec<u64>>,
+    open_pr_count_by_author: HashMap<String, u32>,
 }
 
 pub(crate) fn run_classify(
@@ -257,6 +263,15 @@ fn facts_from_snapshot(snapshot: &FactSnapshot, org_members: &HashSet<String>) -
         .collect()
 }
 
+#[allow(dead_code)]
+pub(crate) fn build_report_from_snapshot(
+    snapshot: &FactSnapshot,
+    org_members: &HashSet<String>,
+) -> ClassifyReport {
+    let facts = facts_from_snapshot(snapshot, org_members);
+    build_report(&facts, None, Vec::new())
+}
+
 fn build_report(
     all_facts: &[PrFacts],
     rate: Option<RateReport>,
@@ -267,6 +282,7 @@ fn build_report(
         .iter()
         .map(|name| ((*name).to_string(), Vec::new()))
         .collect::<BTreeMap<_, _>>();
+    let mut by_author = BTreeMap::<String, Vec<u64>>::new();
     let mut by_number = BTreeMap::new();
     for facts in all_facts {
         let tags = classify_pr(facts, &ctx);
@@ -276,14 +292,24 @@ fn build_report(
                 .or_default()
                 .push(facts.number);
         }
+        if !facts.author.is_empty() {
+            by_author
+                .entry(facts.author.clone())
+                .or_default()
+                .push(facts.number);
+        }
         by_number.insert(facts.number.to_string(), tags);
     }
     by_tag.retain(|_, nums| !nums.is_empty());
+    for numbers in by_author.values_mut() {
+        numbers.sort_unstable();
+    }
     ClassifyReport {
         generated_at: now_timestamp(),
         open_pr_total: all_facts.len(),
         classified_count: all_facts.len(),
         by_tag,
+        by_author,
         by_number,
         rate,
         warnings,
@@ -292,14 +318,21 @@ fn build_report(
 
 fn build_context(all_facts: &[PrFacts]) -> ClassifyContext {
     let mut title_index_by_author = HashMap::<String, Vec<u64>>::new();
+    let mut open_pr_count_by_author = HashMap::<String, u32>::new();
     for facts in all_facts {
         title_index_by_author
             .entry(format!("{}\0{}", facts.author, facts.title))
             .or_default()
             .push(facts.number);
+        if !facts.author.is_empty() {
+            *open_pr_count_by_author
+                .entry(facts.author.clone())
+                .or_insert(0) += 1;
+        }
     }
     ClassifyContext {
         title_index_by_author,
+        open_pr_count_by_author,
     }
 }
 
@@ -318,6 +351,7 @@ fn classify_pr(facts: &PrFacts, ctx: &ClassifyContext) -> Vec<Tag> {
         tag_awaiting_author_response(facts),
         tag_awaiting_reviewer_response(facts),
         tag_awaiting_first_review(facts),
+        tag_author_cluster(facts, ctx),
     ]
     .into_iter()
     .flatten()
@@ -330,6 +364,7 @@ fn tag_bot_only_approval(facts: &PrFacts) -> Option<Tag> {
         reason: "reviewDecision=APPROVED; every APPROVED review is bot-authored".to_string(),
         source: "gh.reviewDecision+latestReviews".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -339,6 +374,7 @@ fn tag_needs_rebase(facts: &PrFacts) -> Option<Tag> {
         reason: format!("mergeStateStatus={}", facts.merge_state_status),
         source: "gh.mergeStateStatus".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -352,6 +388,7 @@ fn tag_forbidden_surface(facts: &PrFacts) -> Option<Tag> {
         ),
         source: "files+lane.deriveForbidden".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -365,6 +402,7 @@ fn tag_unlabeled(facts: &PrFacts) -> Option<Tag> {
         reason: format!("missing label prefixes: {}", missing.join(", ")),
         source: "gh.labels".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -391,6 +429,7 @@ fn tag_duplicate_title(facts: &PrFacts, ctx: &ClassifyContext) -> Option<Tag> {
         ),
         source: "cross-pr.titleIndexByAuthor".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -421,6 +460,7 @@ fn tag_non_ascii_slug(facts: &PrFacts) -> Option<Tag> {
         ),
         source: "files+lane.DESIGN_DIR".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -431,6 +471,7 @@ fn tag_maintainer_edits_disabled(facts: &PrFacts) -> Option<Tag> {
             .to_string(),
         source: "gh.maintainerCanModify".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -440,6 +481,7 @@ fn tag_org_member(facts: &PrFacts) -> Option<Tag> {
         reason: format!("author {} is a member of the repo's org", facts.author),
         source: "gh api orgs/<org>/members".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -459,6 +501,7 @@ fn tag_unresolved_changes_requested(facts: &PrFacts) -> Option<Tag> {
             ),
             source: "gh.latestReviews[].state".to_string(),
             awaiting_hours: None,
+            cluster_size: None,
         });
     }
     (facts.review_decision == "CHANGES_REQUESTED").then(|| Tag {
@@ -466,6 +509,7 @@ fn tag_unresolved_changes_requested(facts: &PrFacts) -> Option<Tag> {
         reason: "reviewDecision=CHANGES_REQUESTED at PR level; no per-reviewer CHANGES_REQUESTED state in latest-per-author reduction of fetched reviews".to_string(),
         source: "gh.reviewDecision".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -497,6 +541,7 @@ fn tag_stale_approval(facts: &PrFacts) -> Option<Tag> {
         ),
         source: "gh.latestReviews[].commit.oid+gh.headRefOid".to_string(),
         awaiting_hours: None,
+        cluster_size: None,
     })
 }
 
@@ -517,6 +562,7 @@ fn tag_awaiting_author_response(facts: &PrFacts) -> Option<Tag> {
         ),
         source: "latestReviews+comments+commits".to_string(),
         awaiting_hours: Some(gap_hours),
+        cluster_size: None,
     })
 }
 
@@ -537,6 +583,7 @@ fn tag_awaiting_reviewer_response(facts: &PrFacts) -> Option<Tag> {
         ),
         source: "latestReviews+comments+commits".to_string(),
         awaiting_hours: Some(gap_hours),
+        cluster_size: None,
     })
 }
 
@@ -553,6 +600,24 @@ fn tag_awaiting_first_review(facts: &PrFacts) -> Option<Tag> {
         ),
         source: "latestReviews+comments+createdAt".to_string(),
         awaiting_hours: Some(age_hours),
+        cluster_size: None,
+    })
+}
+
+fn tag_author_cluster(facts: &PrFacts, ctx: &ClassifyContext) -> Option<Tag> {
+    if facts.author.is_empty() {
+        return None;
+    }
+    let count = *ctx.open_pr_count_by_author.get(&facts.author)?;
+    (count >= AUTHOR_CLUSTER_THRESHOLD).then(|| Tag {
+        name: "author-cluster".to_string(),
+        reason: format!(
+            "author {} has {} open PRs in this snapshot (threshold {})",
+            facts.author, count, AUTHOR_CLUSTER_THRESHOLD
+        ),
+        source: "cross-pr.openPrCountByAuthor".to_string(),
+        awaiting_hours: None,
+        cluster_size: Some(count),
     })
 }
 
@@ -621,10 +686,11 @@ fn format_single_pr(number: u64, tags: &[Tag]) -> String {
         lines.push("  (no tags matched)".to_string());
     }
     for tag in tags {
-        let suffix = tag
-            .awaiting_hours
-            .map(|hours| format!("  (awaiting {hours}h)"))
-            .unwrap_or_default();
+        let suffix = match (tag.awaiting_hours, tag.cluster_size) {
+            (Some(hours), _) => format!("  (awaiting {hours}h)"),
+            (_, Some(size)) => format!("  (cluster size {size})"),
+            _ => String::new(),
+        };
         lines.push(format!("  - {}{}", tag.name, suffix));
         lines.push(format!("      reason: {}", tag.reason));
         lines.push(format!("      source: {}", tag.source));
