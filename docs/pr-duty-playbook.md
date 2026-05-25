@@ -209,19 +209,82 @@ and the final merge decision remain on GitHub regardless of org membership.
 
 For high-value or high-risk technical PRs — contract-lane PRs, large
 refactors, security-sensitive fixes, scope-mixed PRs flagged via classify —
-an agent produces an internal analysis brief:
+an agent produces an analysis brief:
 
 1. Pull `duty view <num>` for the structural brief and `gh pr diff <num>` for
    the patch.
 2. Read `../templates/agent-review.md` for tone and section pool, compose for
    the specific PR. Sections appear only when they carry signal.
-3. Write the brief to `.tmp/duty/reviews/<num>.md`. This is a transient
-   runtime artifact, never posted directly to GitHub.
+3. Write the brief to `.tmp/duty/reviews/<num>.md`. By default this is a
+   transient runtime artifact and stays local; the public pre-review path
+   below describes the conditions under which the same brief is also posted
+   to GitHub.
 4. Surface the brief to the maintainer; the decision to split, block, merge,
-   IM, or post a public review stays with them.
+   IM, or post a public review stays with them (unless the public pre-review
+   path applies).
 
 `../templates/examples/*.md` are frozen historical exemplars of the
 agent-review style applied to three PR shapes — scope-expanded, clean
 contract feature, and CHANGES_REQUESTED with prior human reviews. They
 illustrate how section shape varies with the PR. Treat them as style
 references, not canonical scaffolding.
+
+### Agent public pre-review (escalated agent-review path)
+
+Anchor case: `nexu-io/open-design#1922` (2026-05-25). When the maintainer
+needs verification cost taken off their plate, the bucket-3 agent-review
+brief is posted publicly as a GitHub review (`--approve` or `--comment`)
+instead of staying local. The same conduct rules apply: factual sentences,
+anchored evidence, no authority claims.
+
+**Eligibility — all of the following must hold:**
+
+- The PR is structurally bucket-3 (contract-lane, large refactor,
+  security-sensitive, scope-mixed) AND has been blocked by review-side
+  inaction (`awaiting-reviewer-response-24h`, an unanswered `looper`-style
+  bot `CHANGES_REQUESTED`, or `awaiting-author-response-24h` whose latest
+  "human-reviewer signal" is actually one reviewer pinging another).
+- The author has already pushed updates after the blocking review.
+- All required CI checks are `SUCCESS` (no `FAILURE`; `SKIPPED` is fine).
+- The PR head OID at the moment of evidence collection equals the head OID
+  at the moment of submission.
+
+**Confidence ladder — choose one:**
+
+- **`--approve`** when every prior blocker is addressed with both a file:line
+  in the diff AND a regression test:line that locks the fix, no new
+  substantive issue is found, and the surface area is contained to a feature
+  add or a single named refactor.
+- **`--comment`** when any prior blocker is only partially addressed, a new
+  substantive issue is found, an architecture-level concern needs to surface,
+  or scope-mix is unflagged in the PR body.
+- **Stay local** when evidence is incomplete, when the agent disagrees with
+  the original blocking review on its merits (let the human reviewer handle
+  it), or when the head OID drifted during reading.
+
+**Brief structure when posting publicly:**
+
+1. Single-line framing: "External pre-review from a maintainer-duty pass."
+2. Per-blocker section: name the blocker, state Resolved / Partially
+   resolved / Not addressed, cite the file:line in the diff and the
+   regression test:line.
+3. Non-blocking notes: credential safety, scope drift, brittle heuristics,
+   hardcoded values. One bullet each.
+4. CI + merge-state snapshot. Note when `mergeStateStatus=BLOCKED` is purely
+   structural (e.g. an unrescinded bot `CHANGES_REQUESTED`) rather than
+   unaddressed feedback.
+5. Sign-off naming the action (`Approving on the strength of …` or
+   `Leaving as a comment because …`) and explicitly returning the merge
+   decision to the maintainer of record.
+
+**Hard prohibitions:**
+
+- Never dismiss another reviewer's review (no `--dismiss` mutation from this
+  path).
+- Never approve when the head OID changed between evidence collection and
+  submission. Re-fetch the diff and re-verify.
+- Never approve a PR with any required check in `FAILURE`.
+- Never use directive language ("you should merge", "please merge").
+- Never claim authority the agent does not have ("maintainers, go ahead and
+  merge"). The final merge decision is always returned to the maintainer of
+  record.
