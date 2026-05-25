@@ -10,6 +10,9 @@ mod cli;
 mod lane;
 #[path = "../src/list.rs"]
 mod list;
+#[allow(dead_code)]
+#[path = "../src/pr_cache.rs"]
+mod pr_cache;
 #[path = "../src/view.rs"]
 mod view;
 
@@ -21,5 +24,7 @@ mod classify_cases;
 mod cli_cases;
 #[path = "unit/list.rs"]
 mod list_cases;
+#[path = "unit/pr_cache.rs"]
+mod pr_cache_cases;
 #[path = "unit/view.rs"]
 mod view_cases;

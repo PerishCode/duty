@@ -10,7 +10,9 @@ mod github;
 mod lane;
 mod list;
 mod output;
+mod pr_cache;
 mod view;
+mod view_loader;
 
 use assignment::run_assignment;
 use classify::{run_classify, ClassifyRunContext, RateReport};
@@ -18,8 +20,7 @@ use cli::{help_text, parse_args, CliCommand, LogLevel};
 use config::load_config;
 use duty_core::SnapshotSource;
 use github::{
-    fetch_current_user, fetch_fact_snapshot, fetch_open_prs, fetch_org_members,
-    fetch_pull_request_view, fetch_rate_limit,
+    fetch_current_user, fetch_fact_snapshot, fetch_open_prs, fetch_org_members, fetch_rate_limit,
 };
 use list::{classify_list, print_list};
 use output::{print_facts, print_queue};
@@ -158,7 +159,7 @@ fn run() -> Result<i32, String> {
             Ok(0)
         }
         CliCommand::View(options) => {
-            let view = load_pull_request_view(&options)?;
+            let view = view_loader::load(&options)?;
             print_view(&view, options.queue.format)?;
             Ok(0)
         }
@@ -199,36 +200,6 @@ fn load_org_members(repo: &str, offline: bool) -> HashSet<String> {
         Err(error) => {
             debug!(error = %error, "org members fetch failed; continuing without org-member tags");
             HashSet::new()
-        }
-    }
-}
-
-fn load_pull_request_view(
-    options: &cli::ViewOptions,
-) -> Result<duty_core::PullRequestView, String> {
-    let (repo, cache_dir) = resolve_repo_and_cache(&options.queue)?;
-    let cache_path = cache::view_path(&cache_dir, &repo, options.number);
-    if options.queue.offline {
-        let mut cached = cache::read_view(&cache_path)?;
-        cached.source = SnapshotSource::Cache;
-        return Ok(cached);
-    }
-
-    match fetch_pull_request_view(&repo, options.number) {
-        Ok(snapshot) => {
-            cache::write_view(&cache_path, &snapshot)?;
-            Ok(snapshot)
-        }
-        Err(error) => {
-            debug!(error = %error, "live GitHub view fetch failed; trying cache");
-            let mut cached = cache::read_view(&cache_path).map_err(|cache_error| {
-                format!(
-                    "{error}; no usable cache at {} ({cache_error})",
-                    cache_path.display()
-                )
-            })?;
-            cached.source = SnapshotSource::Cache;
-            Ok(cached)
         }
     }
 }

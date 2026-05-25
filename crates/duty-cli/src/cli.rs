@@ -24,6 +24,8 @@ pub(crate) struct QueueOptions {
     pub(crate) limit: usize,
     pub(crate) format: OutputFormat,
     pub(crate) offline: bool,
+    pub(crate) refresh: bool,
+    pub(crate) pr_include_closed: bool,
     pub(crate) include_drafts: bool,
     pub(crate) lane: Option<String>,
     pub(crate) bucket: Option<String>,
@@ -96,6 +98,8 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     let mut limit = 30usize;
     let mut format = OutputFormat::Text;
     let mut offline = false;
+    let mut refresh = false;
+    let mut pr_include_closed = false;
     let mut include_drafts = false;
     let mut lane = None;
     let mut bucket = None;
@@ -160,6 +164,12 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             }
             "--offline" => {
                 offline = true;
+            }
+            "--refresh" => {
+                refresh = true;
+            }
+            "--pr-include-closed" => {
+                pr_include_closed = true;
             }
             "--include-drafts" => {
                 include_drafts = true;
@@ -247,6 +257,10 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         }
     }
 
+    if offline && refresh {
+        return Err("--offline and --refresh are mutually exclusive".to_string());
+    }
+
     let options = QueueOptions {
         repo,
         config,
@@ -254,6 +268,8 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         limit,
         format,
         offline,
+        refresh,
+        pr_include_closed,
         include_drafts,
         lane,
         bucket,
@@ -343,7 +359,7 @@ Commands:
         [--cache-dir <path>] [--offline]
         [--log-level off|error|warn|info|debug|trace]
   view <num> [--json] [--repo owner/name] [--config <path>]
-        [--cache-dir <path>] [--offline]
+        [--cache-dir <path>] [--offline] [--refresh] [--pr-include-closed]
         [--log-level off|error|warn|info|debug|trace]
   assignment [--json] [--user <login|me>] [--unassigned] [--include-drafts]
         [--repo owner/name] [--limit <n>] [--config <path>]
@@ -382,8 +398,13 @@ Classify behavior:
 View behavior:
   view fetches one PR and emits a factual review brief with lane/boundary
   observations, denoised top files, validation hints, recent human reviews and
-  comments, CI rollup, and PR body preview. Successful live views are cached
-  under .tmp/duty/cache by default.
+  comments, CI rollup, and PR body preview. The cache is the REST-style tree
+  .tmp/duty/<org>/<repo>/prs/<num>/{metadata,files,reviews,...}.json. Default
+  mode is incremental: a cheap head-check skips the full refetch when GitHub
+  has not bumped the PR's updatedAt. --offline reads only cache. --refresh
+  forces a full refetch and overwrite. By default a PR that GitHub reports as
+  CLOSED or MERGED is evicted from the cache; pass --pr-include-closed or set
+  DUTY_PR_INCLUDE_CLOSED=1 to keep it.
 
 Assignment behavior:
   assignment groups open PRs by current assignee, derives assigned/idle timing

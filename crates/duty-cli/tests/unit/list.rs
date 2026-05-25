@@ -50,6 +50,8 @@ fn options() -> QueueOptions {
         limit: 30,
         format: OutputFormat::Text,
         offline: false,
+        refresh: false,
+        pr_include_closed: false,
         include_drafts: false,
         lane: None,
         bucket: None,

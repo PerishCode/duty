@@ -143,7 +143,7 @@ pub(crate) fn build_report(
                 .then(a.number.cmp(&b.number))
         });
     }
-    unassigned.sort_by(|a, b| a.number.cmp(&b.number));
+    unassigned.sort_by_key(|a| a.number);
 
     Ok(AssignmentReport {
         generated_at: iso_from_seconds(now),

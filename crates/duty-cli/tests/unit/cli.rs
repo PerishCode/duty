@@ -141,3 +141,43 @@ fn rejects_zero_limit() {
 
     assert!(error.contains("--limit must be greater than 0"));
 }
+
+#[test]
+fn parses_view_cache_mode_flags() {
+    let refresh = parse_args(vec![
+        "view".to_string(),
+        "2862".to_string(),
+        "--refresh".to_string(),
+        "--pr-include-closed".to_string(),
+    ])
+    .expect("parse view --refresh");
+    let CliCommand::View(options) = refresh else {
+        panic!("expected view command");
+    };
+    assert!(options.queue.refresh);
+    assert!(options.queue.pr_include_closed);
+    assert!(!options.queue.offline);
+}
+
+#[test]
+fn view_defaults_have_cache_flags_off() {
+    let command = parse_args(vec!["view".to_string(), "2862".to_string()]).expect("parse view");
+    let CliCommand::View(options) = command else {
+        panic!("expected view command");
+    };
+    assert!(!options.queue.offline);
+    assert!(!options.queue.refresh);
+    assert!(!options.queue.pr_include_closed);
+}
+
+#[test]
+fn offline_and_refresh_are_mutually_exclusive() {
+    let error = parse_args(vec![
+        "view".to_string(),
+        "1".to_string(),
+        "--offline".to_string(),
+        "--refresh".to_string(),
+    ])
+    .expect_err("offline + refresh should fail");
+    assert!(error.contains("mutually exclusive"));
+}

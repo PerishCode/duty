@@ -52,6 +52,8 @@ fn options(format: OutputFormat) -> AssignmentOptions {
             limit: 30,
             format,
             offline: false,
+            refresh: false,
+            pr_include_closed: false,
             include_drafts: false,
             lane: None,
             bucket: None,
