@@ -14,6 +14,10 @@ merge policy, or automated GitHub side effects by default.
 - `crates/` contains the Rust workspace crates. Each core crate owns its local
   `AGENTS.md`; read the child file before editing that subtree.
 - `.github/workflows/` contains CI workflows.
+- `docs/` contains parity notes and maintainer-facing workflow documentation.
+- `templates/` contains maintainer voice/style references for recurring
+  PR-duty comments and internal agent review artifacts. They are references, not
+  fill-in forms; do not post them verbatim.
 - `scripts/init.py` is the idempotent post-clone initializer. It quick-fails on
   missing required tools or repository entrypoints, installs local hooks, and
   exits cleanly only when the checkout is ready for development.

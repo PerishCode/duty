@@ -79,6 +79,10 @@ reads that cache.
 assigned/idle timing from assignment events and assignee activity, and composes
 status/blocker lines from the classify tags.
 
+`templates/` contains maintainer style references for recurring comment kinds
+and internal agent review briefs. They are intentionally not fill-in forms:
+read the beats and compose fresh text for the PR.
+
 ## Development
 
 ```bash
@@ -100,3 +104,6 @@ cargo run --locked -p duty-cli -- assignment --limit 5
 keep product-specific policy out of upstream product repositories.
 
 For source-change shape, see [AGENTS.md](./AGENTS.md).
+
+For the current `tools-pr` compatibility map, see
+[docs/parity.md](./docs/parity.md).
