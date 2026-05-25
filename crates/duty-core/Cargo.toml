@@ -1,0 +1,10 @@
+[package]
+name = "duty-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Core models and parsers for personal maintainer-duty automation."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+

@@ -1,0 +1,9 @@
+{
+  "github": {
+    "defaultRepo": "nexu-io/open-design"
+  },
+  "cache": {
+    "ttlSeconds": 900
+  }
+}
+

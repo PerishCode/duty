@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "crates/duty-cli",
+    "crates/duty-core",
+]
+resolver = "2"
+
