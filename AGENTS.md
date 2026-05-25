@@ -17,7 +17,9 @@ merge policy, or automated GitHub side effects by default.
 - `docs/` contains parity notes and maintainer-facing workflow documentation.
 - `templates/` contains maintainer voice/style references for recurring
   PR-duty comments and internal agent review artifacts. They are references, not
-  fill-in forms; do not post them verbatim.
+  fill-in forms; do not post them verbatim. See `templates/README.md` for the
+  navigation between the three layers (conduct rules, per-tag playbook, style
+  references).
 - `scripts/init.py` is the idempotent post-clone initializer. It quick-fails on
   missing required tools or repository entrypoints, installs local hooks, and
   exits cleanly only when the checkout is ready for development.
@@ -67,6 +69,77 @@ cargo run --locked -p duty-cli -- assignment --limit 5
 `python3 scripts/init.py` is the default post-clone command. Use `--force` only
 when intentionally replacing existing non-init hooks; the script backs them up
 first.
+
+## PR-duty Conduct
+
+These rules govern every PR-duty artifact produced in this workspace, whether
+the author is a human maintainer or an agent: classify reports, view briefs,
+internal agent review drafts, GitHub comments, and IM nudges. The CLI itself
+is built to satisfy them by default; the rules apply to anyone composing on
+top of CLI output.
+
+### Factual output
+
+Every line in a PR-duty artifact must be either:
+
+- a data observation — a fact from `gh`, the diff, or repository paths; or
+- a direct citation — a hard rule from a referenced document (this repo's
+  `AGENTS.md`, the consumer repo's review or contribution guidelines, etc.)
+  with the source noted inline.
+
+Do not emit risk verdicts (`LOW` / `MEDIUM` / `HIGH`), merge recommendations,
+or directive language (`should`, `must`, `do not`, `recommended`,
+`encouraged`, `suggested`). Judgment belongs to the reviewer who consumes the
+artifact, not to the tool or the agent.
+
+### Templates are style references
+
+`templates/*.md` and `templates/examples/*.md` capture tone and section beats
+for recurring artifacts. They are not fill-in forms:
+
+- read the template to absorb tone and beats,
+- compose a fresh artifact woven around the PR-specific facts,
+- vary wording across PRs handled in the same session — identical text
+  broadcast across a contributor's notifications breaks the human-to-human
+  voice.
+
+### Author-addressed vs broadcasting artifacts
+
+- **Author-addressed**: nudges, duplicate-title asks, close-with-reason
+  comments — anything `@`-mentioning a specific contributor in a private-feeling
+  exchange. Detect the author's preferred language before writing:
+
+  ```bash
+  gh pr view <num> --json body,comments,author --jq '
+    .author.login as $a |
+    ([.body, (.comments[] | select(.author.login == $a) | .body)] | join("\n"))
+  '
+  ```
+
+  If the resulting text contains CJK characters, write in Chinese; otherwise
+  English.
+
+- **Broadcasting**: PR descriptions, commit messages, review summaries visible
+  to all reviewers. English regardless of author.
+
+### Org-member channel split
+
+The `org-member` tag is informational. When it co-occurs with operational
+tags (`awaiting-*`, `duplicate-title`, `maintainer-edits-disabled`, etc.),
+route those operational communications through the team's internal IM, not
+as a GitHub comment. Substantive review feedback and the final merge decision
+stay on GitHub regardless.
+
+Every operational playbook step that posts a public comment must filter
+`org-member` out first. See `docs/pr-duty-playbook.md` for the canonical
+filters.
+
+### Per-tag operations
+
+`docs/pr-duty-playbook.md` is the per-tag dictionary and operational handbook:
+each classify-emitted tag, its detection rule, the minimum action it invites,
+and escalation timing. The conduct rules above apply across every step in the
+playbook.
 
 ## Standard Workflow
 
