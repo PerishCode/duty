@@ -336,6 +336,20 @@ pub(crate) fn fetch_rate_limit() -> Result<RateLimitSnapshot, String> {
     Ok(parsed.data.rate_limit)
 }
 
+pub(crate) fn fetch_current_user() -> Result<String, String> {
+    let stdout = run_gh(&[
+        "api".to_string(),
+        "user".to_string(),
+        "--jq".to_string(),
+        ".login".to_string(),
+    ])?;
+    let login = stdout.trim();
+    if login.is_empty() {
+        return Err("gh api user returned no login".to_string());
+    }
+    Ok(login.to_string())
+}
+
 pub(crate) fn fetch_fact_snapshot(repo: &str, limit: usize) -> Result<FactSnapshot, String> {
     let mut warnings = Vec::new();
     let (meta, source) = match fetch_open_pr_meta(repo, limit) {

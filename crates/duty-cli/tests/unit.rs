@@ -1,3 +1,5 @@
+#[path = "../src/assignment.rs"]
+mod assignment;
 #[path = "../src/bot.rs"]
 mod bot;
 #[path = "../src/classify.rs"]
@@ -11,6 +13,8 @@ mod list;
 #[path = "../src/view.rs"]
 mod view;
 
+#[path = "unit/assignment.rs"]
+mod assignment_cases;
 #[path = "unit/classify.rs"]
 mod classify_cases;
 #[path = "unit/cli.rs"]

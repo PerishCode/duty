@@ -162,13 +162,22 @@ pub(crate) fn tags_for_number_with_org_members(
     number: u64,
     org_members: &HashSet<String>,
 ) -> Result<Vec<Tag>, String> {
+    let mut by_number = tags_by_number(snapshot, org_members)?;
+    by_number
+        .remove(&number)
+        .ok_or_else(|| format!("PR #{number} was not present in the fetched facts snapshot"))
+}
+
+pub(crate) fn tags_by_number(
+    snapshot: &FactSnapshot,
+    org_members: &HashSet<String>,
+) -> Result<BTreeMap<u64, Vec<Tag>>, String> {
     let facts = facts_from_snapshot(snapshot, org_members);
     let ctx = build_context(&facts);
-    let facts = facts
-        .into_iter()
-        .find(|facts| facts.number == number)
-        .ok_or_else(|| format!("PR #{number} was not present in the fetched facts snapshot"))?;
-    Ok(classify_pr(&facts, &ctx))
+    Ok(facts
+        .iter()
+        .map(|facts| (facts.number, classify_pr(facts, &ctx)))
+        .collect())
 }
 
 fn facts_from_snapshot(snapshot: &FactSnapshot, org_members: &HashSet<String>) -> Vec<PrFacts> {

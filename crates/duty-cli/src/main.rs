@@ -1,5 +1,6 @@
-use std::{env, process::exit};
+use std::{collections::HashSet, env, process::exit};
 
+mod assignment;
 mod bot;
 mod cache;
 mod classify;
@@ -11,13 +12,14 @@ mod list;
 mod output;
 mod view;
 
+use assignment::run_assignment;
 use classify::{run_classify, ClassifyRunContext, RateReport};
 use cli::{help_text, parse_args, CliCommand, LogLevel};
 use config::load_config;
 use duty_core::SnapshotSource;
 use github::{
-    fetch_fact_snapshot, fetch_open_prs, fetch_org_members, fetch_pull_request_view,
-    fetch_rate_limit,
+    fetch_current_user, fetch_fact_snapshot, fetch_open_prs, fetch_org_members,
+    fetch_pull_request_view, fetch_rate_limit,
 };
 use list::{classify_list, print_list};
 use output::{print_facts, print_queue};
@@ -160,6 +162,23 @@ fn run() -> Result<i32, String> {
             print_view(&view, options.queue.format)?;
             Ok(0)
         }
+        CliCommand::Assignment(options) => {
+            let (repo, cache_dir) = resolve_repo_and_cache(&options.queue)?;
+            let snapshot = load_fact_snapshot_resolved(&options.queue, &repo, &cache_dir)?;
+            let org_members = load_org_members(&repo, options.queue.offline);
+            let me_login = if options.user.as_deref() == Some("me") {
+                if options.queue.offline {
+                    return Err(
+                        "assignment --user me cannot be resolved in --offline mode".to_string()
+                    );
+                }
+                Some(fetch_current_user()?)
+            } else {
+                None
+            };
+            run_assignment(&snapshot, &options, &org_members, me_login)?;
+            Ok(0)
+        }
         CliCommand::Help => {
             println!("{}", help_text());
             Ok(0)
@@ -167,6 +186,19 @@ fn run() -> Result<i32, String> {
         CliCommand::Version => {
             println!("duty {}", build_version());
             Ok(0)
+        }
+    }
+}
+
+fn load_org_members(repo: &str, offline: bool) -> HashSet<String> {
+    if offline {
+        return HashSet::new();
+    }
+    match fetch_org_members(repo) {
+        Ok(members) => members,
+        Err(error) => {
+            debug!(error = %error, "org members fetch failed; continuing without org-member tags");
+            HashSet::new()
         }
     }
 }

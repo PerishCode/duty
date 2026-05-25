@@ -47,12 +47,20 @@ pub(crate) struct ViewOptions {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct AssignmentOptions {
+    pub(crate) queue: QueueOptions,
+    pub(crate) user: Option<String>,
+    pub(crate) unassigned: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum CliCommand {
     Queue(QueueOptions),
     Facts(QueueOptions),
     List(QueueOptions),
     Classify(ClassifyOptions),
     View(ViewOptions),
+    Assignment(AssignmentOptions),
     Help,
     Version,
 }
@@ -65,6 +73,7 @@ impl CliCommand {
             }
             CliCommand::Classify(options) => options.queue.log_level,
             CliCommand::View(options) => options.queue.log_level,
+            CliCommand::Assignment(options) => options.queue.log_level,
             CliCommand::Help | CliCommand::Version => LogLevel::Off,
         }
     }
@@ -77,6 +86,7 @@ enum CommandMode {
     List,
     Classify,
     View,
+    Assignment,
 }
 
 pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
@@ -95,6 +105,8 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     let mut classify_print = false;
     let mut classify_name = None;
     let mut view_number = None;
+    let mut assignment_user = None;
+    let mut assignment_unassigned = false;
     let mut log_level = LogLevel::Off;
     let mut command_seen = false;
     let mut mode = CommandMode::Queue;
@@ -121,6 +133,10 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             "view" if !command_seen => {
                 command_seen = true;
                 mode = CommandMode::View;
+            }
+            "assignment" if !command_seen => {
+                command_seen = true;
+                mode = CommandMode::Assignment;
             }
             "help" | "--help" | "-h" => return Ok(CliCommand::Help),
             "version" | "--version" | "-V" => return Ok(CliCommand::Version),
@@ -156,6 +172,12 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             }
             "--author" => {
                 author = Some(next_value(&mut args, "--author")?);
+            }
+            "--user" => {
+                assignment_user = Some(next_value(&mut args, "--user")?);
+            }
+            "--unassigned" => {
+                assignment_unassigned = true;
             }
             "--all" => {
                 classify_all = true;
@@ -195,6 +217,9 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             }
             other if other.starts_with("--author=") => {
                 author = Some(other["--author=".len()..].to_string());
+            }
+            other if other.starts_with("--user=") => {
+                assignment_user = Some(other["--user=".len()..].to_string());
             }
             other if other.starts_with("--log-level=") => {
                 log_level = parse_log_level(&other["--log-level=".len()..])?;
@@ -252,6 +277,11 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             number: view_number.filter(|number| *number > 0).ok_or_else(|| {
                 "view requires a positive PR number, e.g. duty view 1180".to_string()
             })?,
+        }),
+        CommandMode::Assignment => CliCommand::Assignment(AssignmentOptions {
+            queue: options,
+            user: assignment_user,
+            unassigned: assignment_unassigned,
         }),
     })
 }
@@ -315,6 +345,10 @@ Commands:
   view <num> [--json] [--repo owner/name] [--config <path>]
         [--cache-dir <path>] [--offline]
         [--log-level off|error|warn|info|debug|trace]
+  assignment [--json] [--user <login|me>] [--unassigned] [--include-drafts]
+        [--repo owner/name] [--limit <n>] [--config <path>]
+        [--cache-dir <path>] [--offline]
+        [--log-level off|error|warn|info|debug|trace]
   help
   version
 
@@ -350,6 +384,11 @@ View behavior:
   observations, denoised top files, validation hints, recent human reviews and
   comments, CI rollup, and PR body preview. Successful live views are cached
   under .tmp/duty/cache by default.
+
+Assignment behavior:
+  assignment groups open PRs by current assignee, derives assigned/idle timing
+  from assignment timeline events plus assignee activity, and composes status
+  and blocker lines from existing classify tags.
 
 Project:
   Source: https://github.com/PerishCode/duty

@@ -112,6 +112,29 @@ fn parses_view_command() {
 }
 
 #[test]
+fn parses_assignment_command() {
+    let command = parse_args(vec![
+        "assignment".to_string(),
+        "--json".to_string(),
+        "--user".to_string(),
+        "me".to_string(),
+        "--unassigned".to_string(),
+        "--include-drafts".to_string(),
+        "--limit=10".to_string(),
+    ])
+    .expect("parse assignment");
+
+    let CliCommand::Assignment(options) = command else {
+        panic!("expected assignment command");
+    };
+    assert_eq!(options.user.as_deref(), Some("me"));
+    assert!(options.unassigned);
+    assert!(options.queue.include_drafts);
+    assert_eq!(options.queue.limit, 10);
+    assert_eq!(options.queue.format, OutputFormat::Json);
+}
+
+#[test]
 fn rejects_zero_limit() {
     let error = parse_args(vec!["queue".to_string(), "--limit=0".to_string()])
         .expect_err("zero limit should fail");

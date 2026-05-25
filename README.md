@@ -39,6 +39,8 @@ duty classify 2856
 duty classify --all --limit 20 --json
 duty view 2856
 duty view 2856 --json
+duty assignment
+duty assignment --user me
 duty help
 ```
 
@@ -73,6 +75,10 @@ human review/comment context, CI rollup, and PR body preview. Successful live
 views are cached under `.tmp/duty/cache/<owner>__<repo>/views/`; `--offline`
 reads that cache.
 
+`duty assignment` groups the fetched queue by current assignee, derives
+assigned/idle timing from assignment events and assignee activity, and composes
+status/blocker lines from the classify tags.
+
 ## Development
 
 ```bash
@@ -85,6 +91,7 @@ cargo run --locked -p duty-cli -- facts --limit 2
 cargo run --locked -p duty-cli -- list --limit 5
 cargo run --locked -p duty-cli -- classify --all --limit 5 --json
 cargo run --locked -p duty-cli -- view 2856
+cargo run --locked -p duty-cli -- assignment --limit 5
 ```
 
 ## Scope
