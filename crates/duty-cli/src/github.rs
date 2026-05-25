@@ -401,6 +401,40 @@ pub(crate) fn fetch_fact_snapshot(repo: &str, limit: usize) -> Result<FactSnapsh
     })
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct PrHeadCheck {
+    pub(crate) state: String,
+    pub(crate) updated_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonPrHeadCheck {
+    state: Option<String>,
+    updated_at: Option<String>,
+}
+
+pub(crate) fn fetch_pr_head_check(repo: &str, number: u64) -> Result<PrHeadCheck, String> {
+    if number == 0 {
+        return Err("head-check requires a positive PR number".to_string());
+    }
+    let stdout = run_gh(&[
+        "pr".to_string(),
+        "view".to_string(),
+        number.to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+        "--json".to_string(),
+        "state,updatedAt".to_string(),
+    ])?;
+    let row = serde_json::from_str::<JsonPrHeadCheck>(&stdout)
+        .map_err(|error| format!("failed to parse gh PR head-check JSON: {error}"))?;
+    Ok(PrHeadCheck {
+        state: row.state.unwrap_or_else(|| "OPEN".to_string()),
+        updated_at: row.updated_at,
+    })
+}
+
 pub(crate) fn fetch_pull_request_view(repo: &str, number: u64) -> Result<PullRequestView, String> {
     if number == 0 {
         return Err("view requires a positive PR number".to_string());
