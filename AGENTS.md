@@ -187,8 +187,11 @@ rules above apply to every artifact emitted along the way.
   `view` cache both lag the live state by seconds to minutes; treat them as
   read-only inputs, not as the source of truth at write time.
 - `templates/*.md` are tone and beats only. Read; do not paste.
-- `.tmp/duty/reviews/<num>.md` are internal agent-review briefs for bucket-3
-  PRs. They never post to GitHub; they surface to the maintainer for routing.
+- `.tmp/duty/reviews/<num>.md` are agent-review briefs for bucket-3 PRs.
+  Default path: surface to the maintainer for routing, no public posting.
+  Escalated path (`docs/pr-duty-playbook.md` §`Agent public pre-review`): the
+  same brief is also posted as a GitHub `--approve` or `--comment` review
+  when the eligibility gate is met.
 
 ### Per-bucket cadence
 
@@ -207,8 +210,10 @@ each there are:
 - Signal-only buckets (`needs-rebase`, `unresolved-changes-requested`,
   `stale-approval`): no per-PR action; they route PRs into the buckets above.
 - Bucket-3 PRs (contract-lane, large refactor, security-sensitive,
-  scope-mixed): the most expensive — an internal agent-review brief per PR,
-  surfaced to the maintainer.
+  scope-mixed): the most expensive — an agent-review brief per PR, surfaced
+  to the maintainer. When the eligibility gate in
+  `docs/pr-duty-playbook.md` §`Agent public pre-review` is met, the same
+  brief is posted publicly as a GitHub review instead of staying local.
 - `author-cluster`: a structural signal, not a per-PR action. When the tag
   fires (≥ 7 open PRs from one author), the cohort is handled as a single
   consolidated brief at `.tmp/duty/reviews/author-cluster-<login>.md`;
