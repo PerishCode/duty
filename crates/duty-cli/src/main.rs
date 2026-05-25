@@ -1,15 +1,19 @@
 use std::{env, process::exit};
 
+mod bot;
 mod cache;
 mod cli;
 mod config;
 mod github;
+mod lane;
+mod list;
 mod output;
 
 use cli::{help_text, parse_args, CliCommand, LogLevel};
 use config::load_config;
 use duty_core::SnapshotSource;
 use github::{fetch_fact_snapshot, fetch_open_prs};
+use list::{classify_list, print_list};
 use output::{print_facts, print_queue};
 use tracing::debug;
 use tracing_subscriber::filter::LevelFilter;
@@ -90,6 +94,13 @@ fn run() -> Result<i32, String> {
             print_facts(&snapshot, options.format)?;
             Ok(0)
         }
+        CliCommand::List(options) => {
+            let snapshot = load_fact_snapshot(&options)?;
+            let classified = classify_list(&snapshot);
+            let filtered = list::apply_filters(&classified, &options);
+            print_list(&filtered, classified.len(), options.format)?;
+            Ok(0)
+        }
         CliCommand::Help => {
             println!("{}", help_text());
             Ok(0)
@@ -97,6 +108,34 @@ fn run() -> Result<i32, String> {
         CliCommand::Version => {
             println!("duty {}", build_version());
             Ok(0)
+        }
+    }
+}
+
+fn load_fact_snapshot(options: &cli::QueueOptions) -> Result<duty_core::FactSnapshot, String> {
+    let (repo, cache_dir) = resolve_repo_and_cache(options)?;
+    let cache_path = cache::facts_path(&cache_dir, &repo);
+    if options.offline {
+        let mut cached = cache::read_facts(&cache_path)?;
+        cached.source = SnapshotSource::Cache;
+        return Ok(cached);
+    }
+
+    match fetch_fact_snapshot(&repo, options.limit) {
+        Ok(snapshot) => {
+            cache::write_facts(&cache_path, &snapshot)?;
+            Ok(snapshot)
+        }
+        Err(error) => {
+            debug!(error = %error, "live GitHub facts fetch failed; trying cache");
+            let mut cached = cache::read_facts(&cache_path).map_err(|cache_error| {
+                format!(
+                    "{error}; no usable cache at {} ({cache_error})",
+                    cache_path.display()
+                )
+            })?;
+            cached.source = SnapshotSource::Cache;
+            Ok(cached)
         }
     }
 }

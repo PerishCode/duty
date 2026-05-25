@@ -24,6 +24,10 @@ pub(crate) struct QueueOptions {
     pub(crate) limit: usize,
     pub(crate) format: OutputFormat,
     pub(crate) offline: bool,
+    pub(crate) include_drafts: bool,
+    pub(crate) lane: Option<String>,
+    pub(crate) bucket: Option<String>,
+    pub(crate) author: Option<String>,
     pub(crate) log_level: LogLevel,
 }
 
@@ -31,6 +35,7 @@ pub(crate) struct QueueOptions {
 pub(crate) enum CliCommand {
     Queue(QueueOptions),
     Facts(QueueOptions),
+    List(QueueOptions),
     Help,
     Version,
 }
@@ -38,7 +43,9 @@ pub(crate) enum CliCommand {
 impl CliCommand {
     pub(crate) fn log_level(&self) -> LogLevel {
         match self {
-            CliCommand::Queue(options) | CliCommand::Facts(options) => options.log_level,
+            CliCommand::Queue(options) | CliCommand::Facts(options) | CliCommand::List(options) => {
+                options.log_level
+            }
             CliCommand::Help | CliCommand::Version => LogLevel::Off,
         }
     }
@@ -48,6 +55,7 @@ impl CliCommand {
 enum CommandMode {
     Queue,
     Facts,
+    List,
 }
 
 pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
@@ -57,6 +65,10 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     let mut limit = 30usize;
     let mut format = OutputFormat::Text;
     let mut offline = false;
+    let mut include_drafts = false;
+    let mut lane = None;
+    let mut bucket = None;
+    let mut author = None;
     let mut log_level = LogLevel::Off;
     let mut command_seen = false;
     let mut mode = CommandMode::Queue;
@@ -71,6 +83,10 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             "facts" if !command_seen => {
                 command_seen = true;
                 mode = CommandMode::Facts;
+            }
+            "list" if !command_seen => {
+                command_seen = true;
+                mode = CommandMode::List;
             }
             "help" | "--help" | "-h" => return Ok(CliCommand::Help),
             "version" | "--version" | "-V" => return Ok(CliCommand::Version),
@@ -92,6 +108,18 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             "--offline" => {
                 offline = true;
             }
+            "--include-drafts" => {
+                include_drafts = true;
+            }
+            "--lane" => {
+                lane = Some(next_value(&mut args, "--lane")?);
+            }
+            "--bucket" => {
+                bucket = Some(next_value(&mut args, "--bucket")?);
+            }
+            "--author" => {
+                author = Some(next_value(&mut args, "--author")?);
+            }
             "--log-level" => {
                 log_level = parse_log_level(&next_value(&mut args, "--log-level")?)?;
             }
@@ -109,6 +137,15 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             }
             other if other.starts_with("--format=") => {
                 format = parse_format(&other["--format=".len()..])?;
+            }
+            other if other.starts_with("--lane=") => {
+                lane = Some(other["--lane=".len()..].to_string());
+            }
+            other if other.starts_with("--bucket=") => {
+                bucket = Some(other["--bucket=".len()..].to_string());
+            }
+            other if other.starts_with("--author=") => {
+                author = Some(other["--author=".len()..].to_string());
             }
             other if other.starts_with("--log-level=") => {
                 log_level = parse_log_level(&other["--log-level=".len()..])?;
@@ -129,12 +166,17 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         limit,
         format,
         offline,
+        include_drafts,
+        lane,
+        bucket,
+        author,
         log_level,
     };
 
     Ok(match mode {
         CommandMode::Queue => CliCommand::Queue(options),
         CommandMode::Facts => CliCommand::Facts(options),
+        CommandMode::List => CliCommand::List(options),
     })
 }
 
@@ -186,6 +228,10 @@ Commands:
   facts [--repo owner/name] [--limit <n>] [--format text|json]
         [--config <path>] [--cache-dir <path>] [--offline]
         [--log-level off|error|warn|info|debug|trace]
+  list  [--repo owner/name] [--limit <n>] [--format text|json]
+        [--config <path>] [--cache-dir <path>] [--offline]
+        [--lane <list>] [--bucket <list>] [--author <list>] [--include-drafts]
+        [--log-level off|error|warn|info|debug|trace]
   help
   version
 
@@ -204,6 +250,10 @@ Fact behavior:
   commits, and assignment event streams needed by list/classify/view/assignment
   parity work. Chunk failures are reported as warnings when a partial snapshot
   can still be produced.
+
+List behavior:
+  list classifies a facts snapshot into review-state buckets and path-derived
+  lanes, with filters matching the tools-pr list surface.
 
 Project:
   Source: https://github.com/PerishCode/duty

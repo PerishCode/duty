@@ -33,6 +33,8 @@ duty queue --format json
 duty queue --offline
 duty facts --limit 10
 duty facts --format json
+duty list --limit 20
+duty list --lane docs --format json
 duty help
 ```
 
@@ -48,6 +50,10 @@ stats, files, reviews, commits, comments, and assignment event streams that
 later `list`, `classify`, `view`, and `assignment` commands will consume. Chunk
 failures are reported as warnings when a partial snapshot can still be built.
 
+`duty list` classifies a facts snapshot into the first `tools-pr list` parity
+slice: path-derived lanes, review-state buckets, labels, bot-only approval
+detection, and lane/bucket/author/draft filters.
+
 ## Development
 
 ```bash
@@ -57,6 +63,7 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo run --locked -p duty-cli -- help
 cargo run --locked -p duty-cli -- facts --limit 2
+cargo run --locked -p duty-cli -- list --limit 5
 ```
 
 ## Scope
