@@ -23,8 +23,6 @@ merge policy, or automated GitHub side effects by default.
 - `scripts/init.py` is the idempotent post-clone initializer. It quick-fails on
   missing required tools or repository entrypoints, installs local hooks, and
   exits cleanly only when the checkout is ready for development.
-- `install.sh` and `install.ps1` are the public local installation entrypoints
-  at the repository root.
 - `duty.json` is the default personal config for this checkout. Consumer repos
   can keep their own config files outside this source tree.
 
@@ -52,23 +50,52 @@ workflow notes, and FAQ for that subtree.
 
 ## Common Commands
 
+Two distinct paths share the workspace:
+
+- **Hot path** — real PR-duty work runs the installed `duty` binary. It is
+  cwd-independent, has no compile latency, and matches the actual end-user
+  experience.
+- **Iteration path** — changing `duty` itself runs `cargo …` against the
+  workspace.
+
+Keep them separate: use `cargo run -p duty-cli -- <sub>` only when validating
+a code change to that subcommand, not for real triage.
+
+### Install / upgrade
+
+```bash
+cargo install --locked --path crates/duty-cli
+```
+
+This places `duty` in `~/.cargo/bin/`. Re-run after pulling new commits or
+changing local source. A flavor-aligned binary distribution pipeline will
+replace this entrypoint later.
+
+### PR-duty hot path
+
+```bash
+duty queue --limit 5
+duty queue --limit 5 --format json
+duty facts --limit 5
+duty list --limit 5
+duty classify --all --limit 5 --json
+duty view 2856
+duty assignment --limit 5
+```
+
+### Workspace iteration
+
 ```bash
 python3 scripts/init.py
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
-cargo run --locked -p duty-cli -- queue --limit 5
-cargo run --locked -p duty-cli -- queue --limit 5 --format json
-cargo run --locked -p duty-cli -- facts --limit 5
-cargo run --locked -p duty-cli -- list --limit 5
-cargo run --locked -p duty-cli -- classify --all --limit 5 --json
-cargo run --locked -p duty-cli -- view 2856
-cargo run --locked -p duty-cli -- assignment --limit 5
+cargo run --locked -p duty-cli -- help
 ```
 
-`python3 scripts/init.py` is the default post-clone command. Use `--force` only
-when intentionally replacing existing non-init hooks; the script backs them up
-first.
+`python3 scripts/init.py` is the default post-clone command. Use `--force`
+only when intentionally replacing existing non-init hooks; the script backs
+them up first.
 
 ## PR-duty Conduct
 
@@ -140,6 +167,65 @@ filters.
 each classify-emitted tag, its detection rule, the minimum action it invites,
 and escalation timing. The conduct rules above apply across every step in the
 playbook.
+
+## PR-duty Triage Approach
+
+A triage round runs by bucket, not by PR. The classify report is the entry
+panel; each bucket maps to one operation in `docs/pr-duty-playbook.md`. Work
+through whichever buckets matter for the round and stop. The PR-duty Conduct
+rules above apply to every artifact emitted along the way.
+
+### Tool roles
+
+- `duty classify --all --json` writes the per-tag bucket index to
+  `.tmp/duty/classify/<timestamp>.json`. Re-run at the start of every round —
+  the queue moves while you read.
+- `duty view <num>` is the per-PR structural brief from the REST-style cache.
+  Use when a bucket entry needs a closer look before action.
+- `gh pr view --json …` + `jq` is the live sanity-check at every decision
+  point (direct merge, enqueue, comment, close). The classify report and the
+  `view` cache both lag the live state by seconds to minutes; treat them as
+  read-only inputs, not as the source of truth at write time.
+- `templates/*.md` are tone and beats only. Read; do not paste.
+- `.tmp/duty/reviews/<num>.md` are internal agent-review briefs for bucket-3
+  PRs. They never post to GitHub; they surface to the maintainer for routing.
+
+### Per-bucket cadence
+
+Buckets imply different work-per-PR costs. Plan the round around how many of
+each there are:
+
+- Direct-merge candidates (`bot-only-approval` strictly intersected with
+  surgical — size/XS, single file, ≤ ~30 lines, no boundary or contract
+  surface): 5–10 min each, the fastest output of a round.
+- Public-comment buckets (`duplicate-title`,
+  `awaiting-author-response-24h` ≥ 96h after `org-member` filter): 5–15 min
+  each, because composing a fresh message per PR is mandatory.
+- Offline buckets (`awaiting-reviewer-response-24h`,
+  `awaiting-first-review-24h`): no GitHub output, but require a maintainer
+  decision (claim the review or re-ping a reviewer).
+- Signal-only buckets (`needs-rebase`, `unresolved-changes-requested`,
+  `stale-approval`): no per-PR action; they route PRs into the buckets above.
+- Bucket-3 PRs (contract-lane, large refactor, security-sensitive,
+  scope-mixed): the most expensive — an internal agent-review brief per PR,
+  surfaced to the maintainer.
+
+See `docs/pr-duty-playbook.md` for the per-tag thresholds, filters, and
+commands.
+
+### Author-cluster batching
+
+When several PRs from the same author land in the same operational bucket
+(common in `unresolved-changes-requested`), read all of them in one pass
+before deciding per-PR actions. Avoids re-paging the same author context.
+
+### Pre-write sanity check
+
+Every GitHub write action — `gh pr merge`, `gh pr comment`, `gh pr close`, the
+merge-queue `enqueuePullRequest` mutation — re-runs the relevant sanity check
+immediately before invocation. The classify report and the `view` cache are
+inputs to planning the round, never the source of truth at the moment of
+writing.
 
 ## Standard Workflow
 

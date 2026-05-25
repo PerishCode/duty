@@ -30,8 +30,6 @@ REQUIRED_PATHS = (
     "Cargo.toml",
     "Cargo.lock",
     "duty.json",
-    "install.sh",
-    "install.ps1",
     ".github/workflows/guard.yml",
     "scripts/init.py",
 )
@@ -54,26 +52,8 @@ cargo test --locked --workspace
 echo "==> CLI smoke"
 cargo run --locked -p duty-cli -- help
 
-echo "==> shell syntax"
-sh -n install.sh
-
 echo "==> python syntax"
 python3 -m py_compile scripts/init.py
-
-if command -v pwsh >/dev/null 2>&1; then
-  echo "==> PowerShell syntax"
-  pwsh -NoProfile -NonInteractive -Command \\
-    '
-$ErrorActionPreference = "Stop"
-foreach ($path in $args) {{
-  [scriptblock]::Create((Get-Content -Raw $path)) | Out-Null
-}}
-' \\
-    install.ps1
-else
-  echo "==> PowerShell syntax"
-  echo "skip: pwsh not found"
-fi
 """
 
 COMMIT_MSG_HOOK = f"""#!/usr/bin/env sh

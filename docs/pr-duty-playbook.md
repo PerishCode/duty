@@ -68,6 +68,30 @@ with the maintainer. Every step that posts a public comment must filter
    gh pr merge <num> --squash --delete-branch
    ```
 
+   **Fallback for merge-queue repos with disabled auto-merge** (currently
+   `nexu-io/open-design`): the command above fails with
+   `GraphQL: Auto merge is not allowed for this repository
+   (enablePullRequestAutoMerge)` because the branch-protection merge queue
+   is enabled while the `enablePullRequestAutoMerge` mutation is disabled at
+   the repo level. Add the PR to the queue directly — the queue then runs
+   the squash and the branch deletion:
+
+   ```bash
+   PR_NODE_ID=$(gh pr view <num> --repo <owner/repo> --json id --jq '.id')
+   gh api graphql \
+     -f query='mutation($pr: ID!) {
+       enqueuePullRequest(input: { pullRequestId: $pr }) {
+         mergeQueueEntry { position estimatedTimeToMerge }
+       }
+     }' -F pr="$PR_NODE_ID"
+   ```
+
+   The mutation only succeeds when the PR already satisfies the queue
+   preconditions verified in step 1 (`state=OPEN`,
+   `reviewDecision=APPROVED`, `mergeStateStatus=CLEAN`, all required checks
+   `SUCCESS`). If it returns an error, re-check the sanity output rather
+   than retrying.
+
 4. Confirm:
 
    ```bash
