@@ -437,8 +437,8 @@ fn tag_maintainer_edits_disabled(facts: &PrFacts) -> Option<Tag> {
 fn tag_org_member(facts: &PrFacts) -> Option<Tag> {
     facts.is_org_member.then(|| Tag {
         name: "org-member".to_string(),
-        reason: format!("author {} is a member of the repo owner org", facts.author),
-        source: "gh.api.orgs.members".to_string(),
+        reason: format!("author {} is a member of the repo's org", facts.author),
+        source: "gh api orgs/<org>/members".to_string(),
         awaiting_hours: None,
     })
 }
