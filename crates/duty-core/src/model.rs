@@ -31,6 +31,7 @@ pub enum SnapshotSource {
     GhJson,
     GhPlain,
     GhFacts,
+    GhView,
     Cache,
 }
 
@@ -61,6 +62,39 @@ impl FactSnapshot {
     pub fn queue_prs(&self) -> Vec<OpenPullRequest> {
         self.meta.iter().map(OpenPullRequest::from).collect()
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PullRequestView {
+    pub repo: String,
+    pub fetched_at: String,
+    pub source: SnapshotSource,
+    pub warnings: Vec<String>,
+    pub number: u64,
+    pub url: String,
+    pub title: String,
+    pub body: String,
+    pub state: String,
+    pub author: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub is_draft: Option<bool>,
+    pub review_decision: Option<String>,
+    pub merge_state_status: Option<String>,
+    pub labels: Vec<String>,
+    pub additions: Option<u64>,
+    pub deletions: Option<u64>,
+    pub changed_files: Option<u64>,
+    pub base_ref_name: Option<String>,
+    pub head_ref_name: Option<String>,
+    pub head_ref_oid: Option<String>,
+    pub maintainer_can_modify: Option<bool>,
+    pub assignees: Vec<String>,
+    pub files: Vec<FileChange>,
+    pub status_check_rollup: Vec<StatusCheck>,
+    pub reviews: Vec<Review>,
+    pub comments: Vec<Comment>,
+    pub commits: Vec<Commit>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -97,6 +131,17 @@ pub struct FileChange {
     pub additions: Option<u64>,
     pub deletions: Option<u64>,
     pub change_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StatusCheck {
+    pub typename: Option<String>,
+    pub name: Option<String>,
+    pub workflow_name: Option<String>,
+    pub conclusion: Option<String>,
+    pub status: Option<String>,
+    pub state: Option<String>,
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

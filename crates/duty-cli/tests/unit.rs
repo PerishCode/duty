@@ -8,6 +8,8 @@ mod cli;
 mod lane;
 #[path = "../src/list.rs"]
 mod list;
+#[path = "../src/view.rs"]
+mod view;
 
 #[path = "unit/classify.rs"]
 mod classify_cases;
@@ -15,3 +17,5 @@ mod classify_cases;
 mod cli_cases;
 #[path = "unit/list.rs"]
 mod list_cases;
+#[path = "unit/view.rs"]
+mod view_cases;

@@ -37,6 +37,8 @@ duty list --limit 20
 duty list --lane docs --format json
 duty classify 2856
 duty classify --all --limit 20 --json
+duty view 2856
+duty view 2856 --json
 duty help
 ```
 
@@ -61,6 +63,12 @@ The first parity slice covers label, rebase, forbidden surface, duplicate-title,
 bot-only approval, stale approval, maintainer-edit, unresolved
 changes-requested, non-ASCII design-system slug, and awaiting-response tags.
 
+`duty view` fetches a single PR and emits the first `tools-pr view` parity
+slice: lane and boundary facts, denoised top files, validation hints, recent
+human review/comment context, CI rollup, and PR body preview. Successful live
+views are cached under `.tmp/duty/cache/<owner>__<repo>/views/`; `--offline`
+reads that cache.
+
 ## Development
 
 ```bash
@@ -72,6 +80,7 @@ cargo run --locked -p duty-cli -- help
 cargo run --locked -p duty-cli -- facts --limit 2
 cargo run --locked -p duty-cli -- list --limit 5
 cargo run --locked -p duty-cli -- classify --all --limit 5 --json
+cargo run --locked -p duty-cli -- view 2856
 ```
 
 ## Scope

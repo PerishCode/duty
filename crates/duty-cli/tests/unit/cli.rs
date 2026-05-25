@@ -94,6 +94,24 @@ fn parses_classify_single_and_all_modes() {
 }
 
 #[test]
+fn parses_view_command() {
+    let command = parse_args(vec![
+        "view".to_string(),
+        "2856".to_string(),
+        "--json".to_string(),
+        "--repo=nexu-io/open-design".to_string(),
+    ])
+    .expect("parse view");
+
+    let CliCommand::View(options) = command else {
+        panic!("expected view command");
+    };
+    assert_eq!(options.number, 2856);
+    assert_eq!(options.queue.format, OutputFormat::Json);
+    assert_eq!(options.queue.repo.as_deref(), Some("nexu-io/open-design"));
+}
+
+#[test]
 fn rejects_zero_limit() {
     let error = parse_args(vec!["queue".to_string(), "--limit=0".to_string()])
         .expect_err("zero limit should fail");

@@ -12,6 +12,19 @@ pub(crate) enum Lane {
 }
 
 impl Lane {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Lane::Skill => "skill",
+            Lane::DesignSystem => "design-system",
+            Lane::Craft => "craft",
+            Lane::Contract => "contract",
+            Lane::Docs => "docs",
+            Lane::Default => "default",
+            Lane::Multi => "multi",
+            Lane::Unknown => "unknown",
+        }
+    }
+
     pub(crate) fn tag(self) -> &'static str {
         match self {
             Lane::Contract => "CONTRACT",
@@ -97,6 +110,51 @@ pub(crate) fn derive_forbidden(paths: &[String]) -> Vec<String> {
     hits
 }
 
+pub(crate) fn derive_seams(paths: &[String]) -> Vec<String> {
+    let mut seams = Vec::new();
+    if paths
+        .iter()
+        .any(|path| path.starts_with("packages/contracts/"))
+    {
+        seams.push("packages/contracts".to_string());
+    }
+    if paths
+        .iter()
+        .any(|path| path.starts_with("packages/sidecar-proto/"))
+    {
+        seams.push("packages/sidecar-proto".to_string());
+    }
+    if paths.iter().any(|path| {
+        path.starts_with("apps/daemon/src/")
+            && contains_any_ascii_case(path, &["routes", "api", "sse", "http"])
+    }) {
+        seams.push("daemon HTTP/SSE routes".to_string());
+    }
+    if paths
+        .iter()
+        .any(|path| contains_any_ascii_case(path, &["migration", "schema", "sql"]))
+    {
+        seams.push("persisted schema".to_string());
+    }
+    if paths.iter().any(|path| path == "pnpm-workspace.yaml") {
+        seams.push("workspace layout".to_string());
+    }
+    if paths.iter().any(|path| path == "package.json") {
+        seams.push("root package.json".to_string());
+    }
+    seams
+}
+
+pub(crate) fn is_noisy_file(path: &str) -> bool {
+    path == "pnpm-lock.yaml"
+        || path == "CHANGELOG.md"
+        || path.ends_with(".lock")
+        || path.starts_with("generated/")
+        || localized_doc_with_locale(path, "README")
+        || localized_doc_with_locale(path, "CONTRIBUTING")
+        || localized_doc_with_locale(path, "QUICKSTART")
+}
+
 fn push_unique(hits: &mut Vec<Lane>, lane: Lane) {
     if !hits.contains(&lane) {
         hits.push(lane);
@@ -140,4 +198,13 @@ fn is_docs_only(path: &str) -> bool {
 
 fn localized_doc(path: &str, stem: &str) -> bool {
     path == format!("{stem}.md") || (path.starts_with(&format!("{stem}.")) && path.ends_with(".md"))
+}
+
+fn localized_doc_with_locale(path: &str, stem: &str) -> bool {
+    path.starts_with(&format!("{stem}.")) && path.ends_with(".md")
+}
+
+fn contains_any_ascii_case(path: &str, needles: &[&str]) -> bool {
+    let lower = path.to_ascii_lowercase();
+    needles.iter().any(|needle| lower.contains(needle))
 }

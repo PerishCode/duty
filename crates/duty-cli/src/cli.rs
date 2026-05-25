@@ -41,11 +41,18 @@ pub(crate) struct ClassifyOptions {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct ViewOptions {
+    pub(crate) queue: QueueOptions,
+    pub(crate) number: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum CliCommand {
     Queue(QueueOptions),
     Facts(QueueOptions),
     List(QueueOptions),
     Classify(ClassifyOptions),
+    View(ViewOptions),
     Help,
     Version,
 }
@@ -57,6 +64,7 @@ impl CliCommand {
                 options.log_level
             }
             CliCommand::Classify(options) => options.queue.log_level,
+            CliCommand::View(options) => options.queue.log_level,
             CliCommand::Help | CliCommand::Version => LogLevel::Off,
         }
     }
@@ -68,6 +76,7 @@ enum CommandMode {
     Facts,
     List,
     Classify,
+    View,
 }
 
 pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
@@ -85,6 +94,7 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     let mut classify_all = false;
     let mut classify_print = false;
     let mut classify_name = None;
+    let mut view_number = None;
     let mut log_level = LogLevel::Off;
     let mut command_seen = false;
     let mut mode = CommandMode::Queue;
@@ -107,6 +117,10 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             "classify" if !command_seen => {
                 command_seen = true;
                 mode = CommandMode::Classify;
+            }
+            "view" if !command_seen => {
+                command_seen = true;
+                mode = CommandMode::View;
             }
             "help" | "--help" | "-h" => return Ok(CliCommand::Help),
             "version" | "--version" | "-V" => return Ok(CliCommand::Version),
@@ -192,6 +206,13 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
                         .map_err(|_| format!("unsupported classify PR number: {other}"))?,
                 );
             }
+            other if mode == CommandMode::View && view_number.is_none() => {
+                view_number = Some(
+                    other
+                        .parse::<u64>()
+                        .map_err(|_| format!("unsupported view PR number: {other}"))?,
+                );
+            }
             other => {
                 return Err(format!(
                     "unsupported duty argument: {other}\n\n{}",
@@ -225,6 +246,12 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             all: classify_all,
             print: classify_print,
             name: classify_name,
+        }),
+        CommandMode::View => CliCommand::View(ViewOptions {
+            queue: options,
+            number: view_number.filter(|number| *number > 0).ok_or_else(|| {
+                "view requires a positive PR number, e.g. duty view 1180".to_string()
+            })?,
         }),
     })
 }
@@ -285,6 +312,9 @@ Commands:
         [--repo owner/name] [--limit <n>] [--config <path>]
         [--cache-dir <path>] [--offline]
         [--log-level off|error|warn|info|debug|trace]
+  view <num> [--json] [--repo owner/name] [--config <path>]
+        [--cache-dir <path>] [--offline]
+        [--log-level off|error|warn|info|debug|trace]
   help
   version
 
@@ -312,6 +342,12 @@ Classify behavior:
   classify emits factual script-level tags from the facts snapshot. Use a PR
   number for one PR or --all for the full fetched queue. Full reports are
   written under .tmp/duty/classify unless --json prints the report directly.
+
+View behavior:
+  view fetches one PR and emits a factual review brief with lane/boundary
+  observations, denoised top files, validation hints, recent human reviews and
+  comments, CI rollup, and PR body preview. Successful live views are cached
+  under .tmp/duty/cache by default.
 
 Project:
   Source: https://github.com/PerishCode/duty

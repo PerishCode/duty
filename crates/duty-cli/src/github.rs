@@ -7,7 +7,8 @@ use std::{
 
 use duty_core::{
     parse_plain_pr_list, AssignmentEvent, Comment, Commit, FactSnapshot, FileChange,
-    OpenPullRequest, PrFiles, PrMeta, PrStats, QueueSnapshot, Review, SnapshotSource,
+    OpenPullRequest, PrFiles, PrMeta, PrStats, PullRequestView, QueueSnapshot, Review,
+    SnapshotSource, StatusCheck,
 };
 use serde::{de::DeserializeOwned, Deserialize};
 use tracing::debug;
@@ -54,6 +55,86 @@ struct JsonFile {
     additions: Option<u64>,
     deletions: Option<u64>,
     change_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonPrView {
+    url: Option<String>,
+    title: String,
+    body: Option<String>,
+    is_draft: Option<bool>,
+    review_decision: Option<String>,
+    merge_state_status: Option<String>,
+    state: Option<String>,
+    author: Option<JsonLogin>,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    labels: Option<Vec<JsonName>>,
+    additions: Option<u64>,
+    deletions: Option<u64>,
+    changed_files: Option<u64>,
+    base_ref_name: Option<String>,
+    head_ref_name: Option<String>,
+    head_ref_oid: Option<String>,
+    maintainer_can_modify: Option<bool>,
+    assignees: Option<Vec<JsonLogin>>,
+    files: Option<Vec<JsonFile>>,
+    status_check_rollup: Option<Vec<JsonStatusCheck>>,
+    reviews: Option<Vec<JsonViewReview>>,
+    comments: Option<Vec<JsonViewComment>>,
+    commits: Option<Vec<JsonViewCommit>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonStatusCheck {
+    #[serde(rename = "__typename")]
+    typename: Option<String>,
+    name: Option<String>,
+    workflow_name: Option<String>,
+    conclusion: Option<String>,
+    status: Option<String>,
+    state: Option<String>,
+    context: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonViewReview {
+    author: Option<JsonLogin>,
+    body: Option<String>,
+    state: String,
+    submitted_at: Option<String>,
+    commit: Option<GraphqlCommitOid>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonViewComment {
+    author: Option<JsonLogin>,
+    body: Option<String>,
+    created_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonViewCommit {
+    oid: Option<String>,
+    committed_date: Option<String>,
+    authors: Option<Vec<JsonCommitAuthor>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonCommitAuthor {
+    login: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonInlineComment {
+    user: Option<JsonLogin>,
+    body: Option<String>,
+    created_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -263,6 +344,125 @@ pub(crate) fn fetch_fact_snapshot(repo: &str, limit: usize) -> Result<FactSnapsh
         commits,
         comments,
         assignment_events,
+    })
+}
+
+pub(crate) fn fetch_pull_request_view(repo: &str, number: u64) -> Result<PullRequestView, String> {
+    if number == 0 {
+        return Err("view requires a positive PR number".to_string());
+    }
+
+    let fields = [
+        "url",
+        "title",
+        "body",
+        "isDraft",
+        "reviewDecision",
+        "mergeStateStatus",
+        "state",
+        "author",
+        "createdAt",
+        "updatedAt",
+        "labels",
+        "additions",
+        "deletions",
+        "changedFiles",
+        "baseRefName",
+        "headRefName",
+        "headRefOid",
+        "maintainerCanModify",
+        "assignees",
+        "files",
+        "statusCheckRollup",
+        "reviews",
+        "comments",
+        "commits",
+    ]
+    .join(",");
+    let stdout = run_gh(&[
+        "pr".to_string(),
+        "view".to_string(),
+        number.to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+        "--json".to_string(),
+        fields,
+    ])?;
+    let row = serde_json::from_str::<JsonPrView>(&stdout)
+        .map_err(|error| format!("failed to parse gh PR view JSON: {error}"))?;
+
+    let mut warnings = Vec::new();
+    let mut comments = row
+        .comments
+        .unwrap_or_default()
+        .into_iter()
+        .map(|comment| from_view_comment(number, comment, "issue"))
+        .collect::<Vec<_>>();
+    match fetch_inline_review_comments(repo, number) {
+        Ok(mut inline) => comments.append(&mut inline),
+        Err(error) => warnings.push(format!("inline review comments fetch failed: {error}")),
+    }
+
+    Ok(PullRequestView {
+        repo: repo.to_string(),
+        fetched_at: now_timestamp(),
+        source: SnapshotSource::GhView,
+        warnings,
+        number,
+        url: row.url.unwrap_or_default(),
+        title: row.title,
+        body: row.body.unwrap_or_default(),
+        state: row.state.unwrap_or_else(|| "OPEN".to_string()),
+        author: row.author.map(|author| author.login),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        is_draft: row.is_draft,
+        review_decision: row.review_decision,
+        merge_state_status: row.merge_state_status,
+        labels: row
+            .labels
+            .unwrap_or_default()
+            .into_iter()
+            .map(|label| label.name)
+            .collect(),
+        additions: row.additions,
+        deletions: row.deletions,
+        changed_files: row.changed_files,
+        base_ref_name: row.base_ref_name,
+        head_ref_name: row.head_ref_name,
+        head_ref_oid: row.head_ref_oid,
+        maintainer_can_modify: row.maintainer_can_modify,
+        assignees: row
+            .assignees
+            .unwrap_or_default()
+            .into_iter()
+            .map(|assignee| assignee.login)
+            .collect(),
+        files: row
+            .files
+            .unwrap_or_default()
+            .into_iter()
+            .map(from_json_file)
+            .collect(),
+        status_check_rollup: row
+            .status_check_rollup
+            .unwrap_or_default()
+            .into_iter()
+            .map(from_json_status_check)
+            .collect(),
+        reviews: row
+            .reviews
+            .unwrap_or_default()
+            .into_iter()
+            .map(|review| from_view_review(number, review))
+            .collect(),
+        comments,
+        commits: row
+            .commits
+            .unwrap_or_default()
+            .into_iter()
+            .map(|commit| from_view_commit(number, commit))
+            .collect(),
     })
 }
 
@@ -520,6 +720,56 @@ fn fetch_open_pr_assignment_events(
         .collect())
 }
 
+fn fetch_inline_review_comments(repo: &str, number: u64) -> Result<Vec<Comment>, String> {
+    let (owner, name) = split_repo(repo)?;
+    let stdout = run_gh(&[
+        "api".to_string(),
+        "--paginate".to_string(),
+        "--slurp".to_string(),
+        format!("repos/{owner}/{name}/pulls/{number}/comments"),
+    ])?;
+    parse_inline_review_comments(number, &stdout)
+}
+
+fn parse_inline_review_comments(number: u64, text: &str) -> Result<Vec<Comment>, String> {
+    let value = serde_json::from_str::<serde_json::Value>(text)
+        .map_err(|error| format!("failed to parse inline comment JSON: {error}"))?;
+    let mut comments = Vec::new();
+    match value {
+        serde_json::Value::Array(pages) => {
+            for page in pages {
+                match page {
+                    serde_json::Value::Array(rows) => {
+                        for row in rows {
+                            let raw = serde_json::from_value::<JsonInlineComment>(row).map_err(
+                                |error| format!("failed to parse inline comment entry: {error}"),
+                            )?;
+                            comments.push(from_inline_comment(number, raw));
+                        }
+                    }
+                    other => {
+                        let raw = serde_json::from_value::<JsonInlineComment>(other).map_err(
+                            |error| format!("failed to parse inline comment entry: {error}"),
+                        )?;
+                        comments.push(from_inline_comment(number, raw));
+                    }
+                }
+            }
+        }
+        other => {
+            return Err(format!(
+                "inline comments response was not an array: {}",
+                other
+                    .as_object()
+                    .and_then(|object| object.get("message"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("unexpected JSON shape")
+            ));
+        }
+    }
+    Ok(comments)
+}
+
 fn fetch_paginated_pr_list<N>(repo: &str, limit: usize, node_fields: &str) -> Result<Vec<N>, String>
 where
     N: DeserializeOwned,
@@ -629,6 +879,62 @@ fn from_json_file(file: JsonFile) -> FileChange {
         additions: file.additions,
         deletions: file.deletions,
         change_type: file.change_type,
+    }
+}
+
+fn from_json_status_check(check: JsonStatusCheck) -> StatusCheck {
+    StatusCheck {
+        typename: check.typename,
+        name: check.name,
+        workflow_name: check.workflow_name,
+        conclusion: check.conclusion,
+        status: check.status,
+        state: check.state,
+        context: check.context,
+    }
+}
+
+fn from_view_review(number: u64, review: JsonViewReview) -> Review {
+    Review {
+        number,
+        author: review.author.map(|author| author.login),
+        body: review.body.unwrap_or_default(),
+        state: review.state,
+        submitted_at: review.submitted_at,
+        commit_oid: review.commit.map(|commit| commit.oid),
+    }
+}
+
+fn from_view_comment(number: u64, comment: JsonViewComment, source: &str) -> Comment {
+    Comment {
+        number,
+        author: comment.author.map(|author| author.login),
+        body: comment.body.unwrap_or_default(),
+        created_at: comment.created_at,
+        source: source.to_string(),
+    }
+}
+
+fn from_inline_comment(number: u64, comment: JsonInlineComment) -> Comment {
+    Comment {
+        number,
+        author: comment.user.map(|user| user.login),
+        body: comment.body.unwrap_or_default(),
+        created_at: comment.created_at,
+        source: "inline".to_string(),
+    }
+}
+
+fn from_view_commit(number: u64, commit: JsonViewCommit) -> Commit {
+    Commit {
+        number,
+        oid: commit.oid,
+        committed_date: commit.committed_date,
+        author_login: commit
+            .authors
+            .unwrap_or_default()
+            .into_iter()
+            .find_map(|author| author.login),
     }
 }
 

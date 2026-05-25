@@ -83,6 +83,7 @@ fn source_label(source: SnapshotSource) -> &'static str {
         SnapshotSource::GhJson => "gh-json",
         SnapshotSource::GhPlain => "gh-plain",
         SnapshotSource::GhFacts => "gh-facts",
+        SnapshotSource::GhView => "gh-view",
         SnapshotSource::Cache => "cache",
     }
 }
