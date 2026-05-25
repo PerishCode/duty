@@ -209,6 +209,11 @@ each there are:
 - Bucket-3 PRs (contract-lane, large refactor, security-sensitive,
   scope-mixed): the most expensive — an internal agent-review brief per PR,
   surfaced to the maintainer.
+- `author-cluster`: a structural signal, not a per-PR action. When the tag
+  fires (≥ 7 open PRs from one author), the cohort is handled as a single
+  consolidated brief at `.tmp/duty/reviews/author-cluster-<login>.md`;
+  per-PR actions on the same PRs are suppressed for that round to avoid
+  broadcast-style nudges.
 
 See `docs/pr-duty-playbook.md` for the per-tag thresholds, filters, and
 commands.
