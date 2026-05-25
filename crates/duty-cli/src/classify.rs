@@ -1,11 +1,11 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use duty_core::{Comment, Commit, FactSnapshot, Review};
+use duty_core::{Comment, Commit, FactSnapshot, RateLimitSnapshot, Review};
 use serde::Serialize;
 
 use crate::{
@@ -23,6 +23,7 @@ const KNOWN_TAGS: &[&str] = &[
     "duplicate-title",
     "non-ascii-slug",
     "maintainer-edits-disabled",
+    "org-member",
     "unresolved-changes-requested",
     "stale-approval",
     "awaiting-author-response-24h",
@@ -49,6 +50,7 @@ struct PrFacts {
     review_decision: String,
     merge_state_status: String,
     maintainer_can_modify: Option<bool>,
+    is_org_member: bool,
     head_ref_oid: String,
     labels: Vec<String>,
     file_paths: Vec<String>,
@@ -65,6 +67,25 @@ struct ClassifyReport {
     classified_count: usize,
     by_tag: BTreeMap<String, Vec<u64>>,
     by_number: BTreeMap<String, Vec<Tag>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rate: Option<RateReport>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RateReport {
+    pub(crate) before: RateLimitSnapshot,
+    pub(crate) after: RateLimitSnapshot,
+    pub(crate) cost: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ClassifyRunContext {
+    pub(crate) org_members: HashSet<String>,
+    pub(crate) rate: Option<RateReport>,
+    pub(crate) warnings: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -75,18 +96,15 @@ struct ClassifyContext {
 pub(crate) fn run_classify(
     snapshot: &FactSnapshot,
     options: &ClassifyOptions,
+    run_context: &ClassifyRunContext,
 ) -> Result<(), String> {
-    let facts = facts_from_snapshot(snapshot);
+    let facts = facts_from_snapshot(snapshot, &run_context.org_members);
     if options.all {
-        let report = build_report(&facts);
-        if options.queue.format == OutputFormat::Json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&report)
-                    .map_err(|error| format!("failed to serialize classify report: {error}"))?
-            );
-            return Ok(());
-        }
+        let report = build_report(
+            &facts,
+            run_context.rate.clone(),
+            run_context.warnings.clone(),
+        );
         let path = write_report(&report, options.name.as_deref())?;
         let summary = report
             .by_tag
@@ -96,16 +114,18 @@ pub(crate) fn run_classify(
             .collect::<Vec<_>>()
             .join(" ");
         println!(
-            "wrote {} entries to {}  [{}]",
+            "wrote {} entries to {}  [{}]{}{}",
             report.open_pr_total,
             path.display(),
             if summary.is_empty() {
                 "no tags matched".to_string()
             } else {
                 summary
-            }
+            },
+            rate_summary(report.rate.as_ref()),
+            warning_summary(&report.warnings)
         );
-        if options.print {
+        if options.print || options.queue.format == OutputFormat::Json {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&report)
@@ -118,7 +138,7 @@ pub(crate) fn run_classify(
     let Some(number) = options.number else {
         return Err("classify needs a PR number or --all".to_string());
     };
-    let tags = tags_for_number(snapshot, number)?;
+    let tags = tags_for_number_with_org_members(snapshot, number, &run_context.org_members)?;
     match options.queue.format {
         OutputFormat::Json => {
             println!(
@@ -137,8 +157,12 @@ pub(crate) fn run_classify(
     Ok(())
 }
 
-pub(crate) fn tags_for_number(snapshot: &FactSnapshot, number: u64) -> Result<Vec<Tag>, String> {
-    let facts = facts_from_snapshot(snapshot);
+pub(crate) fn tags_for_number_with_org_members(
+    snapshot: &FactSnapshot,
+    number: u64,
+    org_members: &HashSet<String>,
+) -> Result<Vec<Tag>, String> {
+    let facts = facts_from_snapshot(snapshot, org_members);
     let ctx = build_context(&facts);
     let facts = facts
         .into_iter()
@@ -147,7 +171,7 @@ pub(crate) fn tags_for_number(snapshot: &FactSnapshot, number: u64) -> Result<Ve
     Ok(classify_pr(&facts, &ctx))
 }
 
-fn facts_from_snapshot(snapshot: &FactSnapshot) -> Vec<PrFacts> {
+fn facts_from_snapshot(snapshot: &FactSnapshot, org_members: &HashSet<String>) -> Vec<PrFacts> {
     let stats_by = snapshot
         .stats
         .iter()
@@ -204,6 +228,11 @@ fn facts_from_snapshot(snapshot: &FactSnapshot) -> Vec<PrFacts> {
                     .and_then(|row| row.merge_state_status.clone())
                     .unwrap_or_else(|| "UNKNOWN".to_string()),
                 maintainer_can_modify: meta.maintainer_can_modify,
+                is_org_member: meta
+                    .author
+                    .as_ref()
+                    .map(|author| org_members.contains(author))
+                    .unwrap_or(false),
                 head_ref_oid: stats
                     .and_then(|row| row.head_ref_oid.clone())
                     .unwrap_or_default(),
@@ -219,7 +248,11 @@ fn facts_from_snapshot(snapshot: &FactSnapshot) -> Vec<PrFacts> {
         .collect()
 }
 
-fn build_report(all_facts: &[PrFacts]) -> ClassifyReport {
+fn build_report(
+    all_facts: &[PrFacts],
+    rate: Option<RateReport>,
+    warnings: Vec<String>,
+) -> ClassifyReport {
     let ctx = build_context(all_facts);
     let mut by_tag = KNOWN_TAGS
         .iter()
@@ -243,6 +276,8 @@ fn build_report(all_facts: &[PrFacts]) -> ClassifyReport {
         classified_count: all_facts.len(),
         by_tag,
         by_number,
+        rate,
+        warnings,
     }
 }
 
@@ -268,6 +303,7 @@ fn classify_pr(facts: &PrFacts, ctx: &ClassifyContext) -> Vec<Tag> {
         tag_duplicate_title(facts, ctx),
         tag_non_ascii_slug(facts),
         tag_maintainer_edits_disabled(facts),
+        tag_org_member(facts),
         tag_unresolved_changes_requested(facts),
         tag_stale_approval(facts),
         tag_awaiting_author_response(facts),
@@ -385,6 +421,15 @@ fn tag_maintainer_edits_disabled(facts: &PrFacts) -> Option<Tag> {
         reason: "maintainerCanModify=false on the fork - maintainers cannot push to the PR branch"
             .to_string(),
         source: "gh.maintainerCanModify".to_string(),
+        awaiting_hours: None,
+    })
+}
+
+fn tag_org_member(facts: &PrFacts) -> Option<Tag> {
+    facts.is_org_member.then(|| Tag {
+        name: "org-member".to_string(),
+        reason: format!("author {} is a member of the repo owner org", facts.author),
+        source: "gh.api.orgs.members".to_string(),
         awaiting_hours: None,
     })
 }
@@ -578,6 +623,30 @@ fn format_single_pr(number: u64, tags: &[Tag]) -> String {
     lines.join("\n")
 }
 
+fn rate_summary(rate: Option<&RateReport>) -> String {
+    let Some(rate) = rate else {
+        return String::new();
+    };
+    match rate.cost {
+        Some(cost) => format!(
+            "  rate cost={} remaining={}/{} reset={}",
+            cost, rate.after.remaining, rate.after.limit, rate.after.reset_at
+        ),
+        None => format!(
+            "  rate remaining={}/{} reset={} cost=N/A",
+            rate.after.remaining, rate.after.limit, rate.after.reset_at
+        ),
+    }
+}
+
+fn warning_summary(warnings: &[String]) -> String {
+    if warnings.is_empty() {
+        String::new()
+    } else {
+        format!("  warnings={}", warnings.len())
+    }
+}
+
 fn write_report(report: &ClassifyReport, name: Option<&str>) -> Result<PathBuf, String> {
     let dir = PathBuf::from(".tmp/duty/classify");
     fs::create_dir_all(&dir)
@@ -586,7 +655,7 @@ fn write_report(report: &ClassifyReport, name: Option<&str>) -> Result<PathBuf, 
         "{}.json",
         name.filter(|value| !value.is_empty())
             .map(str::to_string)
-            .unwrap_or_else(|| report.generated_at.replace([':', '-'], ""))
+            .unwrap_or_else(|| timestamp_stem(&report.generated_at))
     ));
     let text = serde_json::to_string_pretty(report)
         .map_err(|error| format!("failed to serialize classify report: {error}"))?;
@@ -620,7 +689,28 @@ fn parse_iso_seconds(iso: &str) -> Option<i64> {
 }
 
 fn iso_from_seconds(seconds: i64) -> String {
-    format!("{seconds}s")
+    let days = seconds.div_euclid(86_400);
+    let day_seconds = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = day_seconds / 3600;
+    let minute = (day_seconds % 3600) / 60;
+    let second = day_seconds % 60;
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn timestamp_stem(iso: &str) -> String {
+    if iso.len() >= 19 {
+        return format!(
+            "{}-{}-{}T{}{}{}Z",
+            &iso[0..4],
+            &iso[5..7],
+            &iso[8..10],
+            &iso[11..13],
+            &iso[14..16],
+            &iso[17..19]
+        );
+    }
+    iso.replace([':', '-'], "")
 }
 
 fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
@@ -631,4 +721,18 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let doy = (153 * month_prime + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146_097 + doe - 719_468
+}
+
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    (year, month, day)
 }

@@ -1,15 +1,18 @@
+use std::collections::HashSet;
+
 use duty_core::{
-    Comment, Commit, FactSnapshot, FileChange, PrFiles, PrMeta, PrStats, Review, SnapshotSource,
+    Comment, Commit, FactSnapshot, FileChange, PrFiles, PrMeta, PrStats, RateLimitSnapshot, Review,
+    SnapshotSource,
 };
 
 use crate::{
-    classify::{run_classify, tags_for_number},
+    classify::{run_classify, tags_for_number_with_org_members, ClassifyRunContext, RateReport},
     cli::{ClassifyOptions, LogLevel, OutputFormat, QueueOptions},
 };
 
 #[test]
 fn emits_tags_from_fact_snapshot() {
-    let tags = tags_for_number(&snapshot(), 1).expect("tags");
+    let tags = tags_for_number_with_org_members(&snapshot(), 1, &HashSet::new()).expect("tags");
     let names = tags.iter().map(|tag| tag.name.as_str()).collect::<Vec<_>>();
 
     assert!(names.contains(&"bot-only-approval"));
@@ -18,9 +21,19 @@ fn emits_tags_from_fact_snapshot() {
 }
 
 #[test]
+fn detects_org_member_from_runtime_context() {
+    let org_members = HashSet::from(["alice".to_string()]);
+    let tags =
+        tags_for_number_with_org_members(&snapshot(), 1, &org_members).expect("org member tags");
+    let names = tags.iter().map(|tag| tag.name.as_str()).collect::<Vec<_>>();
+
+    assert!(names.contains(&"org-member"));
+}
+
+#[test]
 fn detects_rebase_forbidden_unlabeled_and_duplicate_title() {
     let snapshot = snapshot();
-    let tags = tags_for_number(&snapshot, 2).expect("tags");
+    let tags = tags_for_number_with_org_members(&snapshot, 2, &HashSet::new()).expect("tags");
     let names = tags.iter().map(|tag| tag.name.as_str()).collect::<Vec<_>>();
 
     assert!(names.contains(&"needs-rebase"));
@@ -39,7 +52,7 @@ fn runs_single_and_all_classify_output_paths() {
         print: false,
         name: None,
     };
-    run_classify(&snapshot, &single).expect("single classify");
+    run_classify(&snapshot, &single, &ClassifyRunContext::default()).expect("single classify");
 
     let all = ClassifyOptions {
         queue: options(OutputFormat::Json),
@@ -48,7 +61,23 @@ fn runs_single_and_all_classify_output_paths() {
         print: false,
         name: Some("unit-classify".to_string()),
     };
-    run_classify(&snapshot, &all).expect("all classify");
+    let context = ClassifyRunContext {
+        rate: Some(RateReport {
+            before: RateLimitSnapshot {
+                remaining: 100,
+                limit: 5000,
+                reset_at: "2026-05-25T05:00:00Z".to_string(),
+            },
+            after: RateLimitSnapshot {
+                remaining: 90,
+                limit: 5000,
+                reset_at: "2026-05-25T05:00:00Z".to_string(),
+            },
+            cost: Some(10),
+        }),
+        ..ClassifyRunContext::default()
+    };
+    run_classify(&snapshot, &all, &context).expect("all classify");
 }
 
 fn options(format: OutputFormat) -> QueueOptions {

@@ -11,11 +11,14 @@ mod list;
 mod output;
 mod view;
 
-use classify::run_classify;
+use classify::{run_classify, ClassifyRunContext, RateReport};
 use cli::{help_text, parse_args, CliCommand, LogLevel};
 use config::load_config;
 use duty_core::SnapshotSource;
-use github::{fetch_fact_snapshot, fetch_open_prs, fetch_pull_request_view};
+use github::{
+    fetch_fact_snapshot, fetch_open_prs, fetch_org_members, fetch_pull_request_view,
+    fetch_rate_limit,
+};
 use list::{classify_list, print_list};
 use output::{print_facts, print_queue};
 use tracing::debug;
@@ -106,8 +109,50 @@ fn run() -> Result<i32, String> {
             Ok(0)
         }
         CliCommand::Classify(options) => {
-            let snapshot = load_fact_snapshot(&options.queue)?;
-            run_classify(&snapshot, &options)?;
+            let (repo, cache_dir) = resolve_repo_and_cache(&options.queue)?;
+            let mut run_context = ClassifyRunContext::default();
+            let rate_before = if options.all && !options.queue.offline {
+                match fetch_rate_limit() {
+                    Ok(snapshot) => Some(snapshot),
+                    Err(error) => {
+                        run_context
+                            .warnings
+                            .push(format!("rate-limit before fetch failed: {error}"));
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            let snapshot = load_fact_snapshot_resolved(&options.queue, &repo, &cache_dir)?;
+            if !options.queue.offline {
+                match fetch_org_members(&repo) {
+                    Ok(members) => run_context.org_members = members,
+                    Err(error) => run_context
+                        .warnings
+                        .push(format!("org members fetch failed: {error}")),
+                }
+            }
+            if let Some(before) = rate_before {
+                match fetch_rate_limit() {
+                    Ok(after) => {
+                        let cost = if before.reset_at == after.reset_at {
+                            Some(before.remaining as i64 - after.remaining as i64)
+                        } else {
+                            None
+                        };
+                        run_context.rate = Some(RateReport {
+                            before,
+                            after,
+                            cost,
+                        });
+                    }
+                    Err(error) => run_context
+                        .warnings
+                        .push(format!("rate-limit after fetch failed: {error}")),
+                }
+            }
+            run_classify(&snapshot, &options, &run_context)?;
             Ok(0)
         }
         CliCommand::View(options) => {
@@ -158,14 +203,22 @@ fn load_pull_request_view(
 
 fn load_fact_snapshot(options: &cli::QueueOptions) -> Result<duty_core::FactSnapshot, String> {
     let (repo, cache_dir) = resolve_repo_and_cache(options)?;
-    let cache_path = cache::facts_path(&cache_dir, &repo);
+    load_fact_snapshot_resolved(options, &repo, &cache_dir)
+}
+
+fn load_fact_snapshot_resolved(
+    options: &cli::QueueOptions,
+    repo: &str,
+    cache_dir: &std::path::Path,
+) -> Result<duty_core::FactSnapshot, String> {
+    let cache_path = cache::facts_path(cache_dir, repo);
     if options.offline {
         let mut cached = cache::read_facts(&cache_path)?;
         cached.source = SnapshotSource::Cache;
         return Ok(cached);
     }
 
-    match fetch_fact_snapshot(&repo, options.limit) {
+    match fetch_fact_snapshot(repo, options.limit) {
         Ok(snapshot) => {
             cache::write_facts(&cache_path, &snapshot)?;
             Ok(snapshot)

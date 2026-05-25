@@ -145,6 +145,14 @@ pub struct StatusCheck {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitSnapshot {
+    pub remaining: u64,
+    pub limit: u64,
+    pub reset_at: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PrFiles {
     pub number: u64,
     pub files: Vec<FileChange>,

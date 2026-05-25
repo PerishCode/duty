@@ -7,8 +7,8 @@ use std::{
 
 use duty_core::{
     parse_plain_pr_list, AssignmentEvent, Comment, Commit, FactSnapshot, FileChange,
-    OpenPullRequest, PrFiles, PrMeta, PrStats, PullRequestView, QueueSnapshot, Review,
-    SnapshotSource, StatusCheck,
+    OpenPullRequest, PrFiles, PrMeta, PrStats, PullRequestView, QueueSnapshot, RateLimitSnapshot,
+    Review, SnapshotSource, StatusCheck,
 };
 use serde::{de::DeserializeOwned, Deserialize};
 use tracing::debug;
@@ -135,6 +135,18 @@ struct JsonInlineComment {
     user: Option<JsonLogin>,
     body: Option<String>,
     created_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonRateLimitResponse {
+    data: JsonRateLimitData,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonRateLimitData {
+    rate_limit: RateLimitSnapshot,
 }
 
 #[derive(Debug, Deserialize)]
@@ -294,6 +306,34 @@ pub(crate) fn fetch_open_prs(repo: &str, limit: usize) -> Result<QueueSnapshot, 
     }
 
     fetch_plain_queue(repo, limit)
+}
+
+pub(crate) fn fetch_org_members(repo: &str) -> Result<HashSet<String>, String> {
+    let (owner, _) = split_repo(repo)?;
+    let stdout = run_gh(&[
+        "api".to_string(),
+        "--paginate".to_string(),
+        format!("orgs/{owner}/members"),
+        "--jq".to_string(),
+        ".[].login".to_string(),
+    ])?;
+    Ok(stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+        .collect())
+}
+
+pub(crate) fn fetch_rate_limit() -> Result<RateLimitSnapshot, String> {
+    let stdout = run_gh(&[
+        "api".to_string(),
+        "graphql".to_string(),
+        "-f".to_string(),
+        "query={ rateLimit { remaining limit resetAt } }".to_string(),
+    ])?;
+    let parsed = serde_json::from_str::<JsonRateLimitResponse>(&stdout)
+        .map_err(|error| format!("failed to parse gh rate-limit JSON: {error}"))?;
+    Ok(parsed.data.rate_limit)
 }
 
 pub(crate) fn fetch_fact_snapshot(repo: &str, limit: usize) -> Result<FactSnapshot, String> {

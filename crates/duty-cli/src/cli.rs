@@ -340,8 +340,10 @@ List behavior:
 
 Classify behavior:
   classify emits factual script-level tags from the facts snapshot. Use a PR
-  number for one PR or --all for the full fetched queue. Full reports are
-  written under .tmp/duty/classify unless --json prints the report directly.
+  number for one PR or --all for the full fetched queue. --json applies to
+  single-PR stdout output; --all writes .tmp/duty/classify/<stem>.json and
+  --print also dumps that full report to stdout. Full-queue reports include
+  GraphQL rate-limit telemetry when live GitHub reads are available.
 
 View behavior:
   view fetches one PR and emits a factual review brief with lane/boundary

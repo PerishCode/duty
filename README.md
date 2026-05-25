@@ -61,7 +61,11 @@ detection, and lane/bucket/author/draft filters.
 `duty classify` emits factual script-level tags from the same facts snapshot.
 The first parity slice covers label, rebase, forbidden surface, duplicate-title,
 bot-only approval, stale approval, maintainer-edit, unresolved
-changes-requested, non-ASCII design-system slug, and awaiting-response tags.
+changes-requested, non-ASCII design-system slug, org-member, and
+awaiting-response tags. `classify --all` writes
+`.tmp/duty/classify/<stem>.json`; pass `--print` to also dump the full report to
+stdout. Full-queue reports include GraphQL rate-limit telemetry when live
+GitHub reads are available.
 
 `duty view` fetches a single PR and emits the first `tools-pr view` parity
 slice: lane and boundary facts, denoised top files, validation hints, recent
