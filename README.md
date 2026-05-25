@@ -9,20 +9,12 @@ PR queue visibility with a degraded path for GitHub API instability: JSON via
 
 ## Install
 
-Unix:
-
 ```bash
-./install.sh
+cargo install --locked --path crates/duty-cli
 ```
 
-Windows PowerShell:
-
-```powershell
-.\install.ps1
-```
-
-Both scripts install the local checkout with `cargo install --locked --path
-crates/duty-cli`.
+This places a `duty` binary in `~/.cargo/bin/`. A flavor-aligned binary
+distribution pipeline will replace this entrypoint later.
 
 ## Usage
 
@@ -85,17 +77,16 @@ read the beats and compose fresh text for the PR.
 
 ## Development
 
+`cargo run` and the cargo test suite are the iteration path — used when
+changing `duty` itself. Real PR-duty work uses the installed `duty` binary
+from the `Usage` section above.
+
 ```bash
 python3 scripts/init.py
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo run --locked -p duty-cli -- help
-cargo run --locked -p duty-cli -- facts --limit 2
-cargo run --locked -p duty-cli -- list --limit 5
-cargo run --locked -p duty-cli -- classify --all --limit 5 --json
-cargo run --locked -p duty-cli -- view 2856
-cargo run --locked -p duty-cli -- assignment --limit 5
 ```
 
 ## Scope
