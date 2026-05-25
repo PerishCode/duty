@@ -55,6 +55,7 @@ cargo run --locked -p duty-cli -- queue --limit 5
 cargo run --locked -p duty-cli -- queue --limit 5 --format json
 cargo run --locked -p duty-cli -- facts --limit 5
 cargo run --locked -p duty-cli -- list --limit 5
+cargo run --locked -p duty-cli -- classify --all --limit 5 --json
 ```
 
 `python3 scripts/init.py` is the default post-clone command. Use `--force` only

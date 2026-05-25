@@ -2,6 +2,7 @@ use std::{env, process::exit};
 
 mod bot;
 mod cache;
+mod classify;
 mod cli;
 mod config;
 mod github;
@@ -9,6 +10,7 @@ mod lane;
 mod list;
 mod output;
 
+use classify::run_classify;
 use cli::{help_text, parse_args, CliCommand, LogLevel};
 use config::load_config;
 use duty_core::SnapshotSource;
@@ -99,6 +101,11 @@ fn run() -> Result<i32, String> {
             let classified = classify_list(&snapshot);
             let filtered = list::apply_filters(&classified, &options);
             print_list(&filtered, classified.len(), options.format)?;
+            Ok(0)
+        }
+        CliCommand::Classify(options) => {
+            let snapshot = load_fact_snapshot(&options.queue)?;
+            run_classify(&snapshot, &options)?;
             Ok(0)
         }
         CliCommand::Help => {

@@ -35,6 +35,8 @@ duty facts --limit 10
 duty facts --format json
 duty list --limit 20
 duty list --lane docs --format json
+duty classify 2856
+duty classify --all --limit 20 --json
 duty help
 ```
 
@@ -54,6 +56,11 @@ failures are reported as warnings when a partial snapshot can still be built.
 slice: path-derived lanes, review-state buckets, labels, bot-only approval
 detection, and lane/bucket/author/draft filters.
 
+`duty classify` emits factual script-level tags from the same facts snapshot.
+The first parity slice covers label, rebase, forbidden surface, duplicate-title,
+bot-only approval, stale approval, maintainer-edit, unresolved
+changes-requested, non-ASCII design-system slug, and awaiting-response tags.
+
 ## Development
 
 ```bash
@@ -64,6 +71,7 @@ cargo test --locked --workspace
 cargo run --locked -p duty-cli -- help
 cargo run --locked -p duty-cli -- facts --limit 2
 cargo run --locked -p duty-cli -- list --limit 5
+cargo run --locked -p duty-cli -- classify --all --limit 5 --json
 ```
 
 ## Scope

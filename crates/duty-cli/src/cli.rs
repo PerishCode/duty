@@ -32,10 +32,20 @@ pub(crate) struct QueueOptions {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct ClassifyOptions {
+    pub(crate) queue: QueueOptions,
+    pub(crate) number: Option<u64>,
+    pub(crate) all: bool,
+    pub(crate) print: bool,
+    pub(crate) name: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum CliCommand {
     Queue(QueueOptions),
     Facts(QueueOptions),
     List(QueueOptions),
+    Classify(ClassifyOptions),
     Help,
     Version,
 }
@@ -46,6 +56,7 @@ impl CliCommand {
             CliCommand::Queue(options) | CliCommand::Facts(options) | CliCommand::List(options) => {
                 options.log_level
             }
+            CliCommand::Classify(options) => options.queue.log_level,
             CliCommand::Help | CliCommand::Version => LogLevel::Off,
         }
     }
@@ -56,6 +67,7 @@ enum CommandMode {
     Queue,
     Facts,
     List,
+    Classify,
 }
 
 pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
@@ -69,6 +81,10 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
     let mut lane = None;
     let mut bucket = None;
     let mut author = None;
+    let mut classify_number = None;
+    let mut classify_all = false;
+    let mut classify_print = false;
+    let mut classify_name = None;
     let mut log_level = LogLevel::Off;
     let mut command_seen = false;
     let mut mode = CommandMode::Queue;
@@ -88,6 +104,10 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
                 command_seen = true;
                 mode = CommandMode::List;
             }
+            "classify" if !command_seen => {
+                command_seen = true;
+                mode = CommandMode::Classify;
+            }
             "help" | "--help" | "-h" => return Ok(CliCommand::Help),
             "version" | "--version" | "-V" => return Ok(CliCommand::Version),
             "--repo" => {
@@ -105,6 +125,9 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             "--format" => {
                 format = parse_format(&next_value(&mut args, "--format")?)?;
             }
+            "--json" => {
+                format = OutputFormat::Json;
+            }
             "--offline" => {
                 offline = true;
             }
@@ -119,6 +142,15 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             }
             "--author" => {
                 author = Some(next_value(&mut args, "--author")?);
+            }
+            "--all" => {
+                classify_all = true;
+            }
+            "--print" => {
+                classify_print = true;
+            }
+            "--name" => {
+                classify_name = Some(next_value(&mut args, "--name")?);
             }
             "--log-level" => {
                 log_level = parse_log_level(&next_value(&mut args, "--log-level")?)?;
@@ -138,6 +170,9 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             other if other.starts_with("--format=") => {
                 format = parse_format(&other["--format=".len()..])?;
             }
+            other if other.starts_with("--name=") => {
+                classify_name = Some(other["--name=".len()..].to_string());
+            }
             other if other.starts_with("--lane=") => {
                 lane = Some(other["--lane=".len()..].to_string());
             }
@@ -149,6 +184,13 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
             }
             other if other.starts_with("--log-level=") => {
                 log_level = parse_log_level(&other["--log-level=".len()..])?;
+            }
+            other if mode == CommandMode::Classify && classify_number.is_none() => {
+                classify_number = Some(
+                    other
+                        .parse::<u64>()
+                        .map_err(|_| format!("unsupported classify PR number: {other}"))?,
+                );
             }
             other => {
                 return Err(format!(
@@ -177,6 +219,13 @@ pub(crate) fn parse_args(args: Vec<String>) -> Result<CliCommand, String> {
         CommandMode::Queue => CliCommand::Queue(options),
         CommandMode::Facts => CliCommand::Facts(options),
         CommandMode::List => CliCommand::List(options),
+        CommandMode::Classify => CliCommand::Classify(ClassifyOptions {
+            queue: options,
+            number: classify_number,
+            all: classify_all,
+            print: classify_print,
+            name: classify_name,
+        }),
     })
 }
 
@@ -232,6 +281,10 @@ Commands:
         [--config <path>] [--cache-dir <path>] [--offline]
         [--lane <list>] [--bucket <list>] [--author <list>] [--include-drafts]
         [--log-level off|error|warn|info|debug|trace]
+  classify [num] [--all] [--json] [--print] [--name <stem>]
+        [--repo owner/name] [--limit <n>] [--config <path>]
+        [--cache-dir <path>] [--offline]
+        [--log-level off|error|warn|info|debug|trace]
   help
   version
 
@@ -254,6 +307,11 @@ Fact behavior:
 List behavior:
   list classifies a facts snapshot into review-state buckets and path-derived
   lanes, with filters matching the tools-pr list surface.
+
+Classify behavior:
+  classify emits factual script-level tags from the facts snapshot. Use a PR
+  number for one PR or --all for the full fetched queue. Full reports are
+  written under .tmp/duty/classify unless --json prints the report directly.
 
 Project:
   Source: https://github.com/PerishCode/duty

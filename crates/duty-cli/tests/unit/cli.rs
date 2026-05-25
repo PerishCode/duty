@@ -64,6 +64,36 @@ fn parses_facts_command() {
 }
 
 #[test]
+fn parses_classify_single_and_all_modes() {
+    let single = parse_args(vec![
+        "classify".to_string(),
+        "42".to_string(),
+        "--json".to_string(),
+    ])
+    .expect("parse single classify");
+    let CliCommand::Classify(single) = single else {
+        panic!("expected classify command");
+    };
+    assert_eq!(single.number, Some(42));
+    assert!(!single.all);
+    assert_eq!(single.queue.format, OutputFormat::Json);
+
+    let all = parse_args(vec![
+        "classify".to_string(),
+        "--all".to_string(),
+        "--print".to_string(),
+        "--name=nightly".to_string(),
+    ])
+    .expect("parse all classify");
+    let CliCommand::Classify(all) = all else {
+        panic!("expected classify command");
+    };
+    assert!(all.all);
+    assert!(all.print);
+    assert_eq!(all.name.as_deref(), Some("nightly"));
+}
+
+#[test]
 fn rejects_zero_limit() {
     let error = parse_args(vec!["queue".to_string(), "--limit=0".to_string()])
         .expect_err("zero limit should fail");
