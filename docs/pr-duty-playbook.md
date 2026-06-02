@@ -40,6 +40,14 @@ start (latest reviewer signal, latest author signal, or `createdAt`
 respectively) and the classify-run moment. Downstream consumers sort PRs
 within an awaiting bucket by `awaitingHours`, or floor-divide by 24 for days.
 
+## Case index
+
+Operational cases are short references for situations that cut across tags:
+
+- [PR collision canonical selection](cases/pr-collision-canonical-selection.md)
+  — when two PRs target the same issue or behavior and one needs to become the
+  maintainer-selected implementation.
+
 ## Operational playbook
 
 Each row is the minimum action; escalation (close, force-merge, etc.) stays
@@ -57,41 +65,44 @@ with the maintainer. Every step that posts a public comment must filter
    ```
 
    Expected: `state=OPEN`, `reviewDecision=APPROVED`, `mergeStateStatus=CLEAN`,
-   every check `SUCCESS`.
+   and no required check with `FAILURE`, `CANCELLED`, `TIMED_OUT`, or an
+   in-progress status.
 
 2. If `duty classify <num>` includes `bot-only-approval`, verify the change is
    surgical (size/XS, single file, < ~30 lines, no boundary or contract
    surface) before proceeding. The surgical judgment lives outside `duty`.
 
-3. Squash-merge per repo convention:
-
-   ```bash
-   gh pr merge <num> --squash --delete-branch
-   ```
-
-   **Fallback for merge-queue repos with disabled auto-merge** (currently
-   `nexu-io/open-design`): the command above fails with
-   `GraphQL: Auto merge is not allowed for this repository
-   (enablePullRequestAutoMerge)` because the branch-protection merge queue
-   is enabled while the `enablePullRequestAutoMerge` mutation is disabled at
-   the repo level. Add the PR to the queue directly — the queue then runs
-   the squash and the branch deletion:
+3. For merge-queue repositories such as `nexu-io/open-design`, enqueue PRs
+   targeting queue-backed branches directly. The queue owns the merge strategy:
 
    ```bash
    PR_NODE_ID=$(gh pr view <num> --repo <owner/repo> --json id --jq '.id')
    gh api graphql \
-     -f query='mutation($pr: ID!) {
-       enqueuePullRequest(input: { pullRequestId: $pr }) {
-         mergeQueueEntry { position estimatedTimeToMerge }
+     -F pullRequestId="$PR_NODE_ID" \
+     -f query='mutation($pullRequestId: ID!) {
+       enqueuePullRequest(input: { pullRequestId: $pullRequestId }) {
+         mergeQueueEntry { id state position }
        }
-     }' -F pr="$PR_NODE_ID"
+     }'
    ```
 
    The mutation only succeeds when the PR already satisfies the queue
    preconditions verified in step 1 (`state=OPEN`,
-   `reviewDecision=APPROVED`, `mergeStateStatus=CLEAN`, all required checks
-   `SUCCESS`). If it returns an error, re-check the sanity output rather
-   than retrying.
+   `reviewDecision=APPROVED`, `mergeStateStatus=CLEAN`, and required checks
+   complete). If it returns an error, re-check the sanity output rather than
+   retrying.
+
+   Release branches that do not have a merge queue, such as
+   `release/v0.9.0`, use the normal GitHub merge path after the same pre-write
+   sanity check:
+
+   ```bash
+   gh pr merge <num> --repo <owner/repo> --merge --delete-branch=false
+   ```
+
+   Use this only when the target branch is explicitly known not to have a
+   merge queue. Keep branch deletion separate from the merge write unless the
+   maintainer explicitly asks for cleanup.
 
 4. Confirm:
 
