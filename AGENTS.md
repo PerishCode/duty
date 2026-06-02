@@ -231,8 +231,8 @@ before deciding per-PR actions. Avoids re-paging the same author context.
 
 ### Pre-write sanity check
 
-Every GitHub write action — `gh pr merge`, `gh pr comment`, `gh pr close`, the
-merge-queue `enqueuePullRequest` mutation — re-runs the relevant sanity check
+Every GitHub write action — the merge-queue `enqueuePullRequest` mutation,
+`gh pr comment`, `gh pr close`, etc. — re-runs the relevant sanity check
 immediately before invocation. The classify report and the `view` cache are
 inputs to planning the round, never the source of truth at the moment of
 writing.
@@ -319,16 +319,11 @@ reviewers should hold in mind.
 `main` is PR-only and protected by the `guard` workflow. Required approvals are
 intentionally `0`; the guard matrix is the merge gate.
 
-After opening a non-draft PR, default to enabling repository auto-merge:
-
-```bash
-gh pr merge <num> --auto --squash --delete-branch
-```
-
-Do not add workflow files just to auto-enable auto-merge. If auto-merge cannot
-be enabled or the repository disables merge commits, wait for green checks and
-fall back to the smallest equivalent manual command, usually
-`gh pr merge <num> --squash --delete-branch`.
+For maintainer-duty target repositories that use a merge queue, follow
+`docs/pr-duty-playbook.md` and enqueue with `enqueuePullRequest` after the
+pre-write sanity check for queue-backed branches. Release branches without a
+merge queue use the documented normal merge path after the same sanity check;
+keep branch cleanup separate unless explicitly requested.
 
 ## FAQ
 
