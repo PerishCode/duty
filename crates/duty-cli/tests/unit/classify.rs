@@ -34,6 +34,23 @@ fn detects_org_member_from_runtime_context() {
 }
 
 #[test]
+fn automation_stamped_maintainer_review_counts_as_reviewer_signal() {
+    let snapshot = automation_stamped_review_snapshot();
+    let tags = tags_for_number_with_org_members(&snapshot, 7, &HashSet::new()).expect("tags");
+
+    assert!(
+        tags.iter()
+            .all(|tag| tag.name != "awaiting-reviewer-response-24h"),
+        "maintainer reviews submitted through Looper still count as reviewer-side activity"
+    );
+    assert!(
+        tags.iter()
+            .all(|tag| tag.name != "awaiting-author-response-24h"),
+        "an APPROVED review is not an author-action request"
+    );
+}
+
+#[test]
 fn detects_rebase_forbidden_unlabeled_and_duplicate_title() {
     let snapshot = snapshot();
     let tags = tags_for_number_with_org_members(&snapshot, 2, &HashSet::new()).expect("tags");
@@ -204,6 +221,74 @@ fn author_cluster_snapshot(pr_count: u64) -> FactSnapshot {
         reviews: Vec::new(),
         commits: Vec::new(),
         comments: Vec::new(),
+        assignment_events: Vec::new(),
+    }
+}
+
+fn automation_stamped_review_snapshot() -> FactSnapshot {
+    FactSnapshot {
+        repo: "nexu-io/open-design".to_string(),
+        fetched_at: "1".to_string(),
+        source: SnapshotSource::GhFacts,
+        warnings: Vec::new(),
+        meta: vec![PrMeta {
+            number: 7,
+            title: "review signal".to_string(),
+            author: Some("contributor".to_string()),
+            created_at: Some("2099-01-01T00:00:00Z".to_string()),
+            updated_at: Some("2099-01-01T00:20:00Z".to_string()),
+            is_draft: Some(false),
+            review_decision: Some(String::new()),
+            labels: vec![
+                "size/S".to_string(),
+                "risk/low".to_string(),
+                "type/bugfix".to_string(),
+            ],
+            maintainer_can_modify: Some(true),
+            assignees: Vec::new(),
+            head_ref_name: Some("fix/review-signal".to_string()),
+        }],
+        stats: vec![PrStats {
+            number: 7,
+            additions: Some(1),
+            deletions: Some(1),
+            changed_files: Some(1),
+            head_ref_name: Some("fix/review-signal".to_string()),
+            head_ref_oid: Some("head-new".to_string()),
+            base_ref_name: Some("main".to_string()),
+            mergeable: Some("MERGEABLE".to_string()),
+            merge_state_status: Some("BLOCKED".to_string()),
+        }],
+        files: vec![PrFiles {
+            number: 7,
+            files: vec![FileChange {
+                path: "apps/web/tests/components/FileViewer.test.tsx".to_string(),
+                additions: Some(1),
+                deletions: Some(1),
+                change_type: Some("MODIFIED".to_string()),
+            }],
+        }],
+        reviews: vec![Review {
+            number: 7,
+            author: Some("PerishCode".to_string()),
+            body: "<!-- looper:review outcome=clean -->".to_string(),
+            state: "APPROVED".to_string(),
+            submitted_at: Some("2099-01-01T00:20:00Z".to_string()),
+            commit_oid: Some("head-new".to_string()),
+        }],
+        commits: vec![Commit {
+            number: 7,
+            oid: Some("head-new".to_string()),
+            committed_date: Some("2099-01-01T00:10:00Z".to_string()),
+            author_login: Some("contributor".to_string()),
+        }],
+        comments: vec![Comment {
+            number: 7,
+            author: Some("contributor".to_string()),
+            body: "updated".to_string(),
+            created_at: Some("2099-01-01T00:10:00Z".to_string()),
+            source: "issue".to_string(),
+        }],
         assignment_events: Vec::new(),
     }
 }

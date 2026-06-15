@@ -5,16 +5,19 @@ use duty_core::Review;
 const BOT_MARKERS: &[&str] = &["<!-- looper:", "Powered by <a", "[bot]"];
 
 pub(crate) fn is_bot_authored(author: Option<&str>, body: &str) -> bool {
-    if author
-        .map(|login| login.to_ascii_lowercase().ends_with("[bot]"))
-        .unwrap_or(false)
-    {
+    if is_bot_login(author) {
         return true;
     }
     let lower = body.to_ascii_lowercase();
     BOT_MARKERS
         .iter()
         .any(|marker| lower.contains(&marker.to_ascii_lowercase()))
+}
+
+pub(crate) fn is_bot_login(author: Option<&str>) -> bool {
+    author
+        .map(|login| login.to_ascii_lowercase().ends_with("[bot]"))
+        .unwrap_or(false)
 }
 
 pub(crate) fn condense(body: &str, max: usize) -> String {
