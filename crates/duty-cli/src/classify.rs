@@ -9,7 +9,7 @@ use duty_core::{Comment, Commit, FactSnapshot, RateLimitSnapshot, Review};
 use serde::Serialize;
 
 use crate::{
-    bot::{is_bot_authored, is_bot_only_approval, latest_reviews_by_author},
+    bot::{is_bot_authored, is_bot_login, is_bot_only_approval, latest_reviews_by_author},
     cli::{ClassifyOptions, OutputFormat},
     lane::{derive_forbidden, derive_lane, Lane},
 };
@@ -546,7 +546,7 @@ fn tag_stale_approval(facts: &PrFacts) -> Option<Tag> {
 }
 
 fn tag_awaiting_author_response(facts: &PrFacts) -> Option<Tag> {
-    let reviewer = human_reviewer_signal_at(facts)?;
+    let reviewer = human_reviewer_author_action_signal_at(facts)?;
     let author = author_signal_at(facts)?;
     if reviewer <= author {
         return None;
@@ -639,12 +639,23 @@ fn author_signal_at(facts: &PrFacts) -> Option<i64> {
 }
 
 fn human_reviewer_signal_at(facts: &PrFacts) -> Option<i64> {
+    human_reviewer_signal_at_inner(facts, true)
+}
+
+fn human_reviewer_author_action_signal_at(facts: &PrFacts) -> Option<i64> {
+    human_reviewer_signal_at_inner(facts, false)
+}
+
+fn human_reviewer_signal_at_inner(facts: &PrFacts, include_approvals: bool) -> Option<i64> {
     let mut max = None;
     for review in &facts.reviews {
         let Some(author) = review.author.as_deref() else {
             continue;
         };
-        if author == facts.author || is_bot_authored(Some(author), &review.body) {
+        if author == facts.author || is_bot_login(Some(author)) {
+            continue;
+        }
+        if !include_approvals && review.state == "APPROVED" {
             continue;
         }
         update_max(&mut max, review.submitted_at.as_deref());

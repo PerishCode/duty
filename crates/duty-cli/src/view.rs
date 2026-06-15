@@ -4,7 +4,9 @@ use duty_core::{FileChange, PullRequestView, Review, StatusCheck};
 use serde::Serialize;
 
 use crate::{
-    bot::{condense, is_bot_authored, is_bot_only_approval, latest_reviews_by_author},
+    bot::{
+        condense, is_bot_authored, is_bot_login, is_bot_only_approval, latest_reviews_by_author,
+    },
     cli::OutputFormat,
     lane::{derive_forbidden, derive_lane, derive_seams, is_noisy_file, Lane},
 };
@@ -240,7 +242,7 @@ fn top_files(files: &[FileChange]) -> Vec<TopFileBrief> {
 fn human_review_briefs(reviews: &[Review]) -> Vec<ReviewBrief> {
     let mut rows = reviews
         .iter()
-        .filter(|review| !is_bot_authored(review.author.as_deref(), &review.body))
+        .filter(|review| !is_bot_login(review.author.as_deref()))
         .map(|review| ReviewBrief {
             author: review
                 .author
