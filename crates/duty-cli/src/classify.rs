@@ -27,6 +27,7 @@ const KNOWN_TAGS: &[&str] = &[
     "org-member",
     "unresolved-changes-requested",
     "stale-approval",
+    "draft-ready-mismatch",
     "awaiting-author-response-24h",
     "awaiting-reviewer-response-24h",
     "awaiting-first-review-24h",
@@ -51,6 +52,7 @@ struct PrFacts {
     author: String,
     title: String,
     created_at: String,
+    is_draft: bool,
     review_decision: String,
     merge_state_status: String,
     maintainer_can_modify: Option<bool>,
@@ -238,6 +240,7 @@ fn facts_from_snapshot(snapshot: &FactSnapshot, org_members: &HashSet<String>) -
                 author: meta.author.clone().unwrap_or_default(),
                 title: meta.title.clone(),
                 created_at: meta.created_at.clone().unwrap_or_default(),
+                is_draft: meta.is_draft.unwrap_or(false),
                 review_decision: meta.review_decision.clone().unwrap_or_default(),
                 merge_state_status: stats
                     .and_then(|row| row.merge_state_status.clone())
@@ -337,7 +340,8 @@ fn build_context(all_facts: &[PrFacts]) -> ClassifyContext {
 }
 
 fn classify_pr(facts: &PrFacts, ctx: &ClassifyContext) -> Vec<Tag> {
-    [
+    let draft_ready_mismatch = tag_draft_ready_mismatch(facts);
+    let mut tags = [
         tag_bot_only_approval(facts),
         tag_needs_rebase(facts),
         tag_forbidden_surface(facts),
@@ -348,14 +352,20 @@ fn classify_pr(facts: &PrFacts, ctx: &ClassifyContext) -> Vec<Tag> {
         tag_org_member(facts),
         tag_unresolved_changes_requested(facts),
         tag_stale_approval(facts),
-        tag_awaiting_author_response(facts),
+        draft_ready_mismatch.clone(),
+        draft_ready_mismatch
+            .is_none()
+            .then(|| tag_awaiting_author_response(facts))
+            .flatten(),
         tag_awaiting_reviewer_response(facts),
         tag_awaiting_first_review(facts),
         tag_author_cluster(facts, ctx),
     ]
     .into_iter()
     .flatten()
-    .collect()
+    .collect::<Vec<_>>();
+    tags.sort_by_key(|tag| tag_order(&tag.name));
+    tags
 }
 
 fn tag_bot_only_approval(facts: &PrFacts) -> Option<Tag> {
@@ -545,6 +555,26 @@ fn tag_stale_approval(facts: &PrFacts) -> Option<Tag> {
     })
 }
 
+fn tag_draft_ready_mismatch(facts: &PrFacts) -> Option<Tag> {
+    if !facts.is_draft || facts.review_decision != "APPROVED" || facts.merge_state_status != "CLEAN"
+    {
+        return None;
+    }
+    let latest_approval = latest_non_bot_approval_at(facts)?;
+    let author_ready = author_ready_comment_at(facts)?;
+    (author_ready >= latest_approval).then(|| Tag {
+        name: "draft-ready-mismatch".to_string(),
+        reason: format!(
+            "draft PR is APPROVED and CLEAN; author ready comment ({}) is newer than latest non-bot approval ({})",
+            iso_from_seconds(author_ready),
+            iso_from_seconds(latest_approval)
+        ),
+        source: "gh.isDraft+reviewDecision+mergeStateStatus+latestReviews+comments".to_string(),
+        awaiting_hours: None,
+        cluster_size: None,
+    })
+}
+
 fn tag_awaiting_author_response(facts: &PrFacts) -> Option<Tag> {
     let reviewer = human_reviewer_author_action_signal_at(facts)?;
     let author = author_signal_at(facts)?;
@@ -638,8 +668,53 @@ fn author_signal_at(facts: &PrFacts) -> Option<i64> {
     max
 }
 
+fn latest_non_bot_approval_at(facts: &PrFacts) -> Option<i64> {
+    let mut max = None;
+    for review in &facts.reviews {
+        if review.state != "APPROVED" || is_bot_login(review.author.as_deref()) {
+            continue;
+        }
+        update_max(&mut max, review.submitted_at.as_deref());
+    }
+    max
+}
+
+fn author_ready_comment_at(facts: &PrFacts) -> Option<i64> {
+    let mut max = None;
+    for comment in &facts.comments {
+        if comment.author.as_deref() != Some(facts.author.as_str()) {
+            continue;
+        }
+        if is_ready_comment(&comment.body) {
+            update_max(&mut max, comment.created_at.as_deref());
+        }
+    }
+    max
+}
+
+fn is_ready_comment(body: &str) -> bool {
+    let lower = body.to_ascii_lowercase();
+    [
+        "ready for merge",
+        "ready to merge",
+        "ready for review",
+        "ready to review",
+        "ready to land",
+        "ready for landing",
+    ]
+    .iter()
+    .any(|phrase| lower.contains(phrase))
+}
+
 fn human_reviewer_signal_at(facts: &PrFacts) -> Option<i64> {
     human_reviewer_signal_at_inner(facts, true)
+}
+
+fn tag_order(name: &str) -> usize {
+    KNOWN_TAGS
+        .iter()
+        .position(|known| *known == name)
+        .unwrap_or(usize::MAX)
 }
 
 fn human_reviewer_author_action_signal_at(facts: &PrFacts) -> Option<i64> {

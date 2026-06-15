@@ -24,6 +24,7 @@ legitimate use.
 | `org-member` | PR author's GitHub login appears in `gh api orgs/<owner>/members` | gh REST orgs members list |
 | `unresolved-changes-requested` | A reviewer's latest review has `state === "CHANGES_REQUESTED"` (primary); falls back to `reviewDecision === "CHANGES_REQUESTED"` when no per-reviewer CR survives the latest-per-author reduction | gh.latestReviews[].state · gh.reviewDecision |
 | `stale-approval` | An `APPROVED` review's `commit.oid` differs from current `headRefOid` | gh.latestReviews[].commit.oid + gh.headRefOid |
+| `draft-ready-mismatch` | Draft PR is `APPROVED` and `CLEAN`, and the author has posted a ready-for-merge/review comment after the latest non-bot approval | gh.isDraft + reviewDecision + mergeStateStatus + latestReviews + comments |
 | `awaiting-author-response-24h` | Latest human-reviewer signal is newer than the latest author signal and is ≥ 24h ago | latestReviews + comments + commits |
 | `awaiting-reviewer-response-24h` | Latest author signal is newer than the latest human-reviewer signal, ≥ 24h ago, and at least one human-reviewer signal exists | latestReviews + comments + commits |
 | `awaiting-first-review-24h` | No human review or non-author non-bot comment exists, and `createdAt` is ≥ 24h ago | latestReviews + comments + createdAt |
@@ -166,6 +167,24 @@ author may still be drafting.
 4. Re-check the classify report in a follow-up run; the awaiting tag clears
    once the author responds. If no response by 14 days, escalate (a more
    direct stale-warning or close-after-warning).
+
+### `draft-ready-mismatch`
+
+The author has already said the PR is ready, but GitHub still reports the PR
+as draft. Do not use the generic inactivity nudge language.
+
+1. Sanity-check the current state:
+
+   ```bash
+   gh pr view <num> --json state,isDraft,reviewDecision,mergeStateStatus,comments
+   ```
+
+2. Compose a narrow public comment that states the current draft status and
+   asks the author to mark the PR ready for review. Do not include internal
+   tooling provenance in the public comment.
+
+3. Do not merge or enqueue while the PR remains draft. Re-check after the
+   author marks it ready.
 
 ### `awaiting-reviewer-response-24h`
 

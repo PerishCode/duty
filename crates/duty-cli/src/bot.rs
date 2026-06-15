@@ -47,7 +47,7 @@ pub(crate) fn is_bot_only_approval(review_decision: &str, reviews: &[Review]) ->
     !approved.is_empty()
         && approved
             .iter()
-            .all(|review| is_bot_authored(review.author.as_deref(), review.body.as_str()))
+            .all(|review| is_bot_login(review.author.as_deref()))
 }
 
 pub(crate) fn latest_reviews_by_author(reviews: &[Review]) -> Vec<Review> {

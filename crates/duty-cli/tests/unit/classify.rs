@@ -18,9 +18,21 @@ fn emits_tags_from_fact_snapshot() {
     let tags = tags_for_number_with_org_members(&snapshot(), 1, &HashSet::new()).expect("tags");
     let names = tags.iter().map(|tag| tag.name.as_str()).collect::<Vec<_>>();
 
-    assert!(names.contains(&"bot-only-approval"));
+    assert!(!names.contains(&"bot-only-approval"));
     assert!(names.contains(&"stale-approval"));
     assert!(names.contains(&"maintainer-edits-disabled"));
+}
+
+#[test]
+fn detects_bot_only_approval_for_bot_login() {
+    let mut snapshot = snapshot();
+    snapshot.reviews[0].author = Some("reviewer[bot]".to_string());
+
+    let tags =
+        tags_for_number_with_org_members(&snapshot, 1, &HashSet::new()).expect("bot-only tags");
+    let names = tags.iter().map(|tag| tag.name.as_str()).collect::<Vec<_>>();
+
+    assert!(names.contains(&"bot-only-approval"));
 }
 
 #[test]
@@ -39,6 +51,10 @@ fn automation_stamped_maintainer_review_counts_as_reviewer_signal() {
     let tags = tags_for_number_with_org_members(&snapshot, 7, &HashSet::new()).expect("tags");
 
     assert!(
+        tags.iter().all(|tag| tag.name != "bot-only-approval"),
+        "Looper-stamped reviews from non-bot logins are human approvals"
+    );
+    assert!(
         tags.iter()
             .all(|tag| tag.name != "awaiting-reviewer-response-24h"),
         "maintainer reviews submitted through Looper still count as reviewer-side activity"
@@ -47,6 +63,19 @@ fn automation_stamped_maintainer_review_counts_as_reviewer_signal() {
         tags.iter()
             .all(|tag| tag.name != "awaiting-author-response-24h"),
         "an APPROVED review is not an author-action request"
+    );
+}
+
+#[test]
+fn detects_draft_ready_mismatch_and_suppresses_generic_author_nudge() {
+    let snapshot = draft_ready_mismatch_snapshot();
+    let tags = tags_for_number_with_org_members(&snapshot, 9, &HashSet::new()).expect("tags");
+    let names = tags.iter().map(|tag| tag.name.as_str()).collect::<Vec<_>>();
+
+    assert!(names.contains(&"draft-ready-mismatch"));
+    assert!(
+        !names.contains(&"awaiting-author-response-24h"),
+        "draft-ready-mismatch has a narrower author-facing action than the generic nudge"
     );
 }
 
@@ -238,7 +267,7 @@ fn automation_stamped_review_snapshot() -> FactSnapshot {
             created_at: Some("2099-01-01T00:00:00Z".to_string()),
             updated_at: Some("2099-01-01T00:20:00Z".to_string()),
             is_draft: Some(false),
-            review_decision: Some(String::new()),
+            review_decision: Some("APPROVED".to_string()),
             labels: vec![
                 "size/S".to_string(),
                 "risk/low".to_string(),
@@ -287,6 +316,74 @@ fn automation_stamped_review_snapshot() -> FactSnapshot {
             author: Some("contributor".to_string()),
             body: "updated".to_string(),
             created_at: Some("2099-01-01T00:10:00Z".to_string()),
+            source: "issue".to_string(),
+        }],
+        assignment_events: Vec::new(),
+    }
+}
+
+fn draft_ready_mismatch_snapshot() -> FactSnapshot {
+    FactSnapshot {
+        repo: "nexu-io/open-design".to_string(),
+        fetched_at: "1".to_string(),
+        source: SnapshotSource::GhFacts,
+        warnings: Vec::new(),
+        meta: vec![PrMeta {
+            number: 9,
+            title: "docs ready but draft".to_string(),
+            author: Some("contributor".to_string()),
+            created_at: Some("2026-05-25T00:00:00Z".to_string()),
+            updated_at: Some("2026-06-07T04:51:51Z".to_string()),
+            is_draft: Some(true),
+            review_decision: Some("APPROVED".to_string()),
+            labels: vec![
+                "size/L".to_string(),
+                "risk/low".to_string(),
+                "type/docs".to_string(),
+            ],
+            maintainer_can_modify: Some(true),
+            assignees: Vec::new(),
+            head_ref_name: Some("docs/ready-draft".to_string()),
+        }],
+        stats: vec![PrStats {
+            number: 9,
+            additions: Some(343),
+            deletions: Some(0),
+            changed_files: Some(2),
+            head_ref_name: Some("docs/ready-draft".to_string()),
+            head_ref_oid: Some("head-ready".to_string()),
+            base_ref_name: Some("main".to_string()),
+            mergeable: Some("MERGEABLE".to_string()),
+            merge_state_status: Some("CLEAN".to_string()),
+        }],
+        files: vec![PrFiles {
+            number: 9,
+            files: vec![FileChange {
+                path: "docs/deployment/cloud/tencent.md".to_string(),
+                additions: Some(329),
+                deletions: Some(0),
+                change_type: Some("ADDED".to_string()),
+            }],
+        }],
+        reviews: vec![Review {
+            number: 9,
+            author: Some("nettee".to_string()),
+            body: "Looks good.".to_string(),
+            state: "APPROVED".to_string(),
+            submitted_at: Some("2026-06-03T04:02:12Z".to_string()),
+            commit_oid: Some("head-ready".to_string()),
+        }],
+        commits: vec![Commit {
+            number: 9,
+            oid: Some("head-ready".to_string()),
+            committed_date: Some("2026-06-03T03:52:48Z".to_string()),
+            author_login: Some("contributor".to_string()),
+        }],
+        comments: vec![Comment {
+            number: 9,
+            author: Some("contributor".to_string()),
+            body: "All checks are passing and the PR is approved. Ready for merge whenever you have a moment!".to_string(),
+            created_at: Some("2026-06-07T04:45:11Z".to_string()),
             source: "issue".to_string(),
         }],
         assignment_events: Vec::new(),

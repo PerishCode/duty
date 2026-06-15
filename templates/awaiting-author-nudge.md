@@ -19,7 +19,6 @@ Beats the comment should hit (in order, very short):
   4. Optional unblock offer if the next step is non-obvious from the diff.
   5. Graceful exit option: "just say so and we'll close it cleanly" — this
      respects the author's time and keeps the queue honest.
-  6. Tooling-transparency line ("Surfaced via `awaiting-author-response-24h`...").
 
 Placeholders mark the PR-specific facts to weave in (not literal blanks):
   {AUTHOR}        — the PR author's GitHub login
@@ -34,5 +33,3 @@ identical comments visible across a contributor's notifications break the
 Exemplar (one valid way to write it):
 -->
 @{AUTHOR} — quick check-in: this has been waiting on your follow-up for about {AWAITING_HUMAN}. Still planning to land it? Happy to help if you're stuck on anything specific; if priorities have shifted, just say so and we'll close it cleanly.
-
-(Surfaced via the `awaiting-author-response-24h` maintainer tooling tag.)

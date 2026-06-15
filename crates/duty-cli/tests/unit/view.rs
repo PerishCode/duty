@@ -17,7 +17,7 @@ fn builds_review_brief_from_single_pr_view() {
     assert_eq!(brief.seams_touched, vec!["packages/contracts"]);
     assert_eq!(brief.top_files.len(), 1);
     assert_eq!(brief.filter_suppressed_file_count, 1);
-    assert!(brief.bot_only_approval);
+    assert!(!brief.bot_only_approval);
     assert_eq!(brief.reviews.len(), 1);
     assert_eq!(brief.reviews[0].author, "reviewer");
     assert_eq!(brief.reviews[0].state, "APPROVED");
